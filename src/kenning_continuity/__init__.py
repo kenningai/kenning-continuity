@@ -10,7 +10,7 @@ logger.setLevel(logging.INFO)
 
 def main():
     """Main entry point for the package."""
-    parser = argparse.ArgumentParser(description='Temporal Knowledge Substrate MCP Server')
+    parser = argparse.ArgumentParser(description='Kenning Continuity — an MCP server for domain-scoped enterprise knowledge')
     parser.add_argument('--db-url', default=None, help='Neo4j connection URL')
     parser.add_argument('--username', default=None, help='Neo4j username')
     parser.add_argument('--password', default=None, help='Neo4j password')

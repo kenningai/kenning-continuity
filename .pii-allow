@@ -1,0 +1,28 @@
+# .pii-allow — benign name-shaped strings, pinned exactly, with reasons.
+#
+# Read by ~/.config/kenning/pii-shape.py. Format: <exact string><TAB><reason>.
+# The string is pinned exactly and the reason is required: an allowlist of
+# PATTERNS would be a hole, an allowlist of exact facts closes behind itself,
+# and a line with no reason is not a ruling but a silencer. Same design as
+# .seal-accepted-drift.
+#
+# Every entry here is a phrase that is name-SHAPED and is not a person. If a
+# real name ever needs adding to this file, that is the signal to remediate
+# instead.
+
+The Apache License	licence prose in NOTICE
+Old Norse	etymology of "kenning" in TRADEMARKS.md
+Old English	etymology of "kenning" in TRADEMARKS.md
+The Kenning AI	our own mark, in prose
+Claude Code	product name, MCP client configuration example
+Claude Desktop	product name, MCP client configuration example
+The IP	sentence-initial "The IP can change" — HOWTO honesty test
+The Session's	sentence-initial possessive in prose
+The Cypher	section heading, "The Cypher escape hatch"
+List Domains	MCP tool title
+List Knowledge Types	MCP tool title
+List Connection Types	MCP tool title
+Merged Layers	test fixture entity name, not a person
+Pydantic Models	source section heading
+Namespace The	sentence-initial after a config key in prose
+Ali Exmpl	deliberate misspelling of the Alice Example placeholder, illustrating that a reference can be wrong

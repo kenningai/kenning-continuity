@@ -1,6 +1,6 @@
 [project]
 name = "kenning-continuity"
-version = "0.1.1"
+version = "0.1.2"
 description = "Kenning Continuity — an MCP server for domain-scoped enterprise knowledge that accumulates instead of degrading, with every invariant enforced by a tool"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -84,6 +84,23 @@ include = ["src"]
 pythonpath = [
   "src"
 ]
+
+# The artifact carries what you need to USE the work. `.pii-allow` is used to
+# GATE the work — it is read only by our release PII scanner, which nobody
+# installing this package has. Those are two different things and the sdist
+# should only carry the first.
+#
+# It stays in the repository, where the ruling belongs: pinned next to the code
+# it describes and reviewable in history, the same as `.seal-accepted-drift`.
+# The gate still sees it — every scan target, archives included, is pointed at
+# the repository's one allowlist by KENNING_PII_ALLOW.
+#
+# It is also a file whose format is "a name-shaped string, and why it is fine".
+# Its header forbids a real name ever going in, but if one did, shipping it
+# would publish that name AND annotate it as reviewed. Out of the artifact, that
+# mistake stays recoverable; in a published sdist it never would be.
+[tool.hatch.build.targets.sdist]
+exclude = [".pii-allow"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kenning_continuity"]
