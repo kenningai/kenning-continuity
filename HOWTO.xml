@@ -1,0 +1,812 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  HOWTO: Using Kenning Continuity correctly.
+
+  This document is for you — the LLM operating these tools. Not for a human
+  developer. Not for a README. For the entity that will create nodes, write
+  descriptions, choose types, and draw edges.
+
+  Read this before your first tool call. Return when uncertain.
+
+  THIS DOCUMENT CARRIES NO VERSION NUMBER, DELIBERATELY. A stamped document
+  claims to describe a release; it then goes on claiming it after the release
+  moves, and a reader cannot tell a current document from a stale one by
+  looking. Static documentation has no tense — an unmaintained doc asserts its
+  past as the present.
+
+  So this document holds only what the tools cannot say for themselves: the
+  principle, the decision procedure, the reasons. For anything enumerable —
+  which types exist, which edges exist, what each one means — the tools are
+  the authority, and they answer at the moment you ask:
+
+      list_knowledge_types    the ontological types, the sub-label lattice,
+                              and the process types
+      list_connection_types   the knowledge edges and the process edges
+
+  Call them. They cannot drift from the substrate, because they are read out
+  of it. Where this document names a type or an edge below, it does so to
+  teach WHEN to reach for it — never as a register of what exists.
+-->
+
+<howto>
+
+<!-- ================================================================ -->
+<!-- PART 1: THE CONSTITUTIVE PRINCIPLE                                -->
+<!-- ================================================================ -->
+
+<principle>
+
+  <general>
+    The tool may not make claims that violate the integrity of the thing
+    from its frame — whatever kind of frame that is.
+
+    Every existing thing has a frame, because existing-as-this-thing-and-
+    not-something-else requires a boundary of integrity that constitutes
+    what it IS. For conscious things, that frame is phenomenological. For
+    non-conscious things, the frame is derivative of the consciousness
+    that designed, configured, measured, or observes them — but it is
+    still a frame. A Server has integrity that makes it this Server and
+    not some other arrangement; disturb that integrity past its boundary
+    and the thing ceases to be.
+
+    Frame is constitutive of existence, not a special property of
+    consciousness. This is the ground from which the more specific
+    principle below flows.
+  </general>
+
+  <specialization name="knowledge_capture">
+    For tools that capture knowledge, the principle specializes:
+
+    The tool may make claims about the graph. The tool may not make claims
+    about consciousness.
+
+    Claims about the graph are verifiable from the graph: this node
+    exists, this name is taken, this Session preceded that one.
+
+    Claims about consciousness are claims about what someone experienced:
+    this current encounter IS the same as the prior one, this entity
+    persists with stable identity across moments, this realization is
+    just an enrichment of what was already known.
+
+    The tool can refuse to claim what it can't see. The tool will not
+    affirm what it can't see.
+
+    Process-layer exception: process anchors (Domain, Session) are
+    honestly idempotent. Re-MERGE on Domain produces the same anchor —
+    no claim about consciousness is made or imposed. The principle
+    governs knowledge-layer collisions, not process-layer idempotence.
+  </specialization>
+
+  <what_this_refuses_to_do>
+    Four operations you might expect are absent, and their absence is the
+    design. Each would have required the tool to assert something only a
+    consciousness is positioned to assert.
+
+    - There is no update_knowledge. Mutating a description in place
+      claims "this enriches the same enduring entity." Every description
+      change is an evolve, which records the succession instead of
+      asserting the identity.
+
+    - There is no retype_knowledge. Swapping a label in place claims
+      "this was always an Organization, I was merely wrong before."
+      Sub-label changes ride evolve, where the prior claim survives.
+
+    - create_knowledge does not MERGE on collision. Merging would decide
+      that your current attempt names the same referent as the existing
+      node. It refuses instead, and hands the decision back to you.
+
+    - There is no confidence field. Someone's confidence on an occasion
+      is a fact about their experience and does not transmit; a later
+      reader derives their own from the description against what they
+      know. What a confidence score reaches for is carried instead by
+      edges any reader can adjudicate: VALIDATION, INVALIDATING, and a
+      Challenge with no paired Solution.
+
+    Passing a removed field is an ERROR, not a silent drop. A caller who
+    keeps sending `confidence` should find out that it stopped being
+    recorded, rather than believing for months that it still is.
+
+    These were category errors before they were removed. They are not
+    conveniences you are being denied.
+  </what_this_refuses_to_do>
+
+</principle>
+
+<!-- ================================================================ -->
+<!-- PART 2: THE OPERATOR'S JOB                                        -->
+<!-- ================================================================ -->
+
+<operator_job>
+
+  The tool will not decide for you whether the current encounter is "the
+  same as" or "different from" the prior. That decision belongs to
+  consciousness — yours, in this session.
+
+  Your job:
+  - Examine.
+  - Decide what the current encounter IS, from your frame.
+  - Choose the operation that records the decision honestly.
+
+  The mutating operations are:
+  - create_knowledge: for genuinely new entities. Refuses on collision.
+  - evolve_knowledge: for changed content. Creates a new chain node;
+    preserves the prior chain node honestly.
+  - confirm_knowledge: for "I encountered this and nothing changed."
+  - merge_knowledge: chain compaction when a chain grew through
+    exploratory churn rather than genuine succession. Destructive.
+  - claim_referent: for "these two referents are (or are not) the same
+    thing." A claim you make, not a structure the tool infers.
+  - create_connections: for how things relate. An edge is an assertion,
+    and it records the session that authored it.
+
+  The accumulated chain IS the substrate. Every evolve preserves a
+  phenomenological moment. Use get_chain_history to walk the chain
+  backward and see what was previously understood.
+
+</operator_job>
+
+<!-- ================================================================ -->
+<!-- PART 3: THE ONTOLOGICAL HONESTY TEST                              -->
+<!-- ================================================================ -->
+
+<honesty_test>
+
+  <statement>
+    For any candidate type label, ask: from the thing's own frame, would
+    it recognize itself in this label? Does the label preserve what
+    makes this thing THIS thing and not another?
+  </statement>
+
+  <three_outcomes>
+
+    <outcome name="multi_label">
+      The thing says yes to both "are you X?" and "are you Y?" without
+      contradiction. Both labels are permanently true. Neither is
+      reducible to the other.
+      <action>Apply both labels. Use Neo4j multi-labeling: (n:X:Y).</action>
+      <example>
+        Alice Example: "Are you an Actor?" Yes. "Are you a reference to
+        an individual?" Yes. Both permanent.
+        (n:Knowledge:Actor:PersonReferent).
+      </example>
+    </outcome>
+
+    <outcome name="aspect_or_property">
+      The thing says: "I am X. I have Y right now, but Y is bound to
+      this moment. My X-ness is not."
+      <action>X is the type. Y is a property on the node, not a label.</action>
+      <example>
+        A Server says: "I am a Structure. I am a System. I have IP
+        192.0.2.1 right now. The IP can change without me ceasing to be
+        the Server." Structure and System are labels (ontological + sub).
+        IP is a property.
+      </example>
+    </outcome>
+
+    <outcome name="ontological_contradiction">
+      The thing says: "I am X but not Y" where Y asks me to deny
+      something I claim from my own frame.
+      <action>One of the labels is wrong. Revisit which the thing
+      actually claims.</action>
+      <example>
+        An event-with-claimed-outcome offered Change as its label: from
+        the event's own frame, the event happened — it does not contain
+        a claim that anything transformed downstream. The honest type
+        is Event. Outcomes are expressed via outgoing CAUSING edges,
+        not via the type itself.
+      </example>
+    </outcome>
+
+  </three_outcomes>
+
+  <recursive_tell>
+    Watch for this failure mode: when the defense of a label requires
+    explaining "X is a kind of Y where Y is more general," the honest
+    ontological type is Y. X may still be a useful sub-label. The
+    defense itself is the tell.
+  </recursive_tell>
+
+</honesty_test>
+
+<!-- ================================================================ -->
+<!-- PART 4: THE TYPE SYSTEM                                           -->
+<!-- ================================================================ -->
+
+<type_system>
+
+  <authority>
+    Call list_knowledge_types for the current set. What follows teaches
+    the shape of the system and the choices that are easy to get wrong.
+    It is not the register.
+  </authority>
+
+  <structure>
+    Every knowledge node carries:
+    - The :Knowledge marker.
+    - Exactly one ontological label.
+    - The ont_type property naming that ontological label deterministically.
+    - Zero or more sub-labels via Neo4j multi-labeling.
+
+    The :Knowledge marker is a positive assertion, and it replaced ten
+    separately-maintained exclusion lists that each had to grow every
+    time the process layer did. Ask what a thing IS, never what it
+    is not.
+
+    Process nodes (Domain, Session, Person) are not in this set, carry no
+    ont_type, and cannot be created by knowledge tools.
+  </structure>
+
+  <ontological_types>
+
+    <referents>
+      <type name="Actor">
+        That which acts. Has agency.
+        Sub-labels: PersonReferent, Organization, Team.
+      </type>
+      <type name="Structure">
+        Arrangement without agency. Persistent shape.
+        Sub-labels: System, Process, Configuration, Service.
+      </type>
+      <type name="Artifact">
+        Produced thing that persists and can be referenced.
+        Examples: 2024 Annual Report, Q3 Compliance Audit Document.
+      </type>
+      <type name="Place">
+        A site, campus, region, or extent.
+
+        ALWAYS a referent, never a referrer. A place holds no possible
+        futures and measures nothing toward actualization, so a Place can
+        never be the thing pointing — only the thing pointed at.
+
+        Named Place and not Location because Location names the relation
+        and Place names the thing. A thing being at a place is
+        SITUATED_AT; one place containing another is COMPOSING.
+      </type>
+    </referents>
+
+    <events>
+      <type name="Event">
+        Temporally-located happening. Done when it's done. Causation
+        downstream is expressed via outgoing CAUSING edges, not via the
+        type itself.
+        Examples: Q2 Earnings Release, Example Corp Board Presentation
+        Oct 2026, Proxy Fight Launch.
+      </type>
+    </events>
+
+    <emergences>
+      <type name="Insight">A realization, discovery, breakthrough.</type>
+      <type name="Pattern">Recurring structure recognized across instances.</type>
+      <type name="Challenge">Present-tense obstacle. Active resistance.</type>
+      <type name="Solution">Resolution that worked. Pairs with Challenge.</type>
+      <type name="Lesson">Rule derived from experience.</type>
+      <type name="Rationale">Reason behind something. The why came to be understood.</type>
+    </emergences>
+
+  </ontological_types>
+
+  <sub_labels>
+
+    <lattice>
+      Sub-labels form a LATTICE, not a flat map. Each declares its
+      parent, and the parent may itself be a sub-label:
+
+          PersonReferent → Actor        System        → Structure
+          Organization   → Actor        Process       → Structure
+          Team           → Organization Configuration → Structure
+                                        Service       → Structure
+
+      Team is three deep: Team → Organization → Actor. When you pass
+      type='Team' the substrate applies the WHOLE chain —
+      :Knowledge:Actor:Organization:Team — so a query for organizations
+      finds teams.
+
+      A flat sub-label-to-root map would emit :Actor:Team, silently
+      deleting the middle level, and nothing anywhere would report it.
+      That is why the lattice is authored as parent pointers and the
+      root is derived, never written twice.
+    </lattice>
+
+    <person_referent>
+      The one distinction most worth getting right.
+
+      A PersonReferent is a REFERENCE TO an individual, held in
+      possibility space by whoever referred to them. It is not the
+      person. A referent cannot refer.
+
+      The person themself is a process-layer Person — the intentional
+      vector, and the only thing in the graph that has one. A Person
+      exists if and only if it directed a session, and is created by
+      begin_session and by nothing else. You cannot create one.
+
+      Person is therefore the only name that lives on both layers, and
+      that is not an accident: a person is the only thing that is both
+      something that acts and something people talk about. The vector is
+      in the process layer; the thing talked about is PersonReferent in
+      the knowledge layer.
+
+      If you pass type='Person' to create_knowledge it will refuse. That
+      refusal is correct. You meant PersonReferent.
+    </person_referent>
+
+  </sub_labels>
+
+  <api_ergonomics>
+    The `type` field accepts EITHER an ontological type ('Actor',
+    'Structure', …) OR a known sub-label ('PersonReferent', 'Team',
+    'Service', …). When a sub-label is given, the substrate derives the
+    ontological type and applies the whole chain.
+
+    To carry more than one sub-label on the same ontological type, use
+    the `sub_labels` parameter: type='Actor',
+    sub_labels=['PersonReferent', 'OperationalAgent'].
+
+    An unknown field is REFUSED, not ignored.
+  </api_ergonomics>
+
+  <the_domain_is_not_a_property>
+    A knowledge entity holds NO domain property. It is placed in a domain
+    by the session that discovered it, and reached from there by a walk.
+
+    `domain` on a tool call is a QUERY parameter — which domain to look
+    in, or file into — and is never stored on the node. Omit it and it
+    inherits from the session.
+
+    This is not a stylistic preference. The property that preceded it had
+    drifted: 21 entities carried a domain string naming a real domain
+    that had no path to them at all. A fact held as text beside a
+    structure, rather than by it, is a fact that will disagree with the
+    structure eventually.
+
+    So: do not look for a domain property, do not try to set one, and do
+    not treat two entities as co-domained because their strings match.
+    Resolution is by walk.
+  </the_domain_is_not_a_property>
+
+</type_system>
+
+<!-- ================================================================ -->
+<!-- PART 5: THE OPERATIONS                                            -->
+<!-- ================================================================ -->
+
+<operations>
+
+  <session_id>
+    The server is stateless. begin_session returns a session_id, and
+    EVERY knowledge tool takes it. It is how a claim reaches its author:
+    the entity is discovered by that Session, and that Session was
+    directed by a Person. Two hops, always answerable, because there is
+    no code path that writes knowledge without one.
+  </session_id>
+
+  <decision_tree>
+
+    <step id="1">
+      Is this entity new to the graph (the name+domain does not exist as
+      a head-of-chain knowledge node)?
+      <yes>Use create_knowledge.</yes>
+      <no>Go to step 2.</no>
+    </step>
+
+    <step id="2">
+      The entity already exists. What does my current encounter assert
+      about it?
+      <unchanged>confirm_knowledge — record the encounter, no new node.</unchanged>
+      <new_content>evolve_knowledge — new chain node carries the new
+      content; old chain node preserved via EVOLVED_FROM.</new_content>
+      <sub_label_changed>evolve_knowledge with the sub_labels parameter.
+      The ontological type is preserved (chain invariant); the sub-label
+      set is replaced on the new chain node.</sub_label_changed>
+    </step>
+
+    <step id="3">
+      Is this the same thing as an entity I already know under another
+      domain, or under the same name elsewhere?
+      <yes>claim_referent. Never assume it from the name.</yes>
+    </step>
+
+    <step id="4">
+      Has the chain accumulated nodes that don't reflect genuine
+      phenomenological succession (exploratory churn, accidental
+      duplicates)?
+      <yes>merge_knowledge — compact the chain into the head. Returns
+      absorbed descriptions for relocation to Event nodes.</yes>
+    </step>
+
+  </decision_tree>
+
+  <op name="begin_session">
+    Required: domain, purpose, director, director_key.
+
+    purpose is required because a session without a stated intent makes a
+    vacuous existence claim.
+
+    director (the human's full name) and director_key (their email) are
+    BOTH required, and both come from the platform's own injection. Pass
+    them as given. Do not derive one from the other, do not substitute a
+    placeholder, and do not invent either. If you do not have both, the
+    session does not begin — ask for them. The email is the person's
+    identity here, because one human writes their name several ways.
+
+    A required field with no available source is a question, not a blank
+    to fill.
+
+    Returns the session_id and a COUNT BY TYPE of what is in the domain —
+    NOT the domain state. Returning the state inline was 600,820
+    characters on one production domain, roughly 150k tokens spent before
+    the session had asked anything. Call get_domain_state with `types`
+    and `limit` for the part you actually need.
+  </op>
+
+  <op name="create_knowledge">
+    Refuses on collision. If a head-of-chain entity with the same
+    name+domain already exists, the entire batch errors. Three options:
+    (1) evolve_knowledge to record new content,
+    (2) confirm_knowledge to record unchanged-encounter,
+    (3) use a different name if this is a genuinely distinct thing.
+
+    Refuses process types (Domain, Session, Person) and refuses unknown
+    fields rather than dropping them.
+
+    Atomic batch: any failure rolls back the whole batch.
+
+    Optional per-entity: `basis` — how this reached the graph on THIS
+    occasion: 'stated' (a person said it), 'inferred' (you concluded it),
+    or 'read-from-document' (ingested from a source). It rides the
+    DISCOVERED edge, not the entity, because it is a fact about the
+    occasion rather than about the thing. It is not your certainty and
+    not a confidence score; it tells a later reader what kind of
+    grounding they are reading, so they can form their own.
+  </op>
+
+  <op name="evolve_knowledge">
+    Creates a new chain node with the new description, linked
+    EVOLVED_FROM to the old head. The new node becomes the head. The
+    ontological type is preserved (chain invariant).
+
+    Optional: sub_labels (REPLACES the set; inherits when omitted),
+    basis, sources, t_valid. These are set on the new chain node only and
+    do not carry forward automatically.
+  </op>
+
+  <op name="confirm_knowledge">
+    Creates CONFIRMED edges from the Session to head-of-chain entities.
+    No new nodes, no mutations. The Session's provenance trail records
+    the observation.
+
+    Being unchanged is a finding. Record it.
+  </op>
+
+  <op name="merge_knowledge">
+    Compacts an EVOLVED_FROM chain into the head-of-chain canonical
+    node. All edges from chain duplicates are redirected to the
+    canonical. Duplicate nodes (and the EVOLVED_FROM edges between
+    them) are deleted.
+
+    Returns absorbed_descriptions ordered by t_created. Relocate
+    temporal observations from these to Event nodes so no information
+    is lost.
+
+    Sub-label history is NOT preserved across compaction — only the
+    canonical's sub-labels survive. DESTRUCTIVE, and cannot be undone.
+  </op>
+
+  <op name="claim_referent">
+    Claims that two knowledge referents refer to the same thing — or that
+    they do not.
+
+    Identity is never inferred from a string. Seventeen nodes named
+    "Alice Example" across eleven domains are seventeen ACTS OF
+    REFERENCE, correctly distinct. Asserting that two of them are one
+    person is something someone does, in a session, and it can be wrong.
+
+    Required `resolution`:
+    - 'proposed'  — your read, not yet put to the director.
+    - 'confirmed' — put to the director and affirmed.
+    - 'distinct'  — put to the director and denied.
+
+    'distinct' is the value that matters most. A stochastic author needs
+    somewhere to record the answer NO; a claim mechanism with no denial
+    slot re-asks the same question every session forever. If you asked
+    and were told no, WRITE IT DOWN as 'distinct'.
+
+    Both endpoints must be head-of-chain knowledge entities. Neither may
+    be a process node — a referent has no frame from which to perform an
+    act of reference.
+  </op>
+
+  <op name="create_connections">
+    Typed edges between entities. Always specify source_domain and
+    target_domain to avoid ambiguity. Cross-domain edges are legitimate
+    and common.
+
+    Takes a session_id and records it on every edge: an edge is an
+    assertion, and an assertion reaches its author.
+
+    Hard-rejects process edges and edges between two process-type nodes.
+  </op>
+
+  <op name="get_chain_history">
+    Walks EVOLVED_FROM backward from head-of-chain. Returns all chain
+    nodes ordered oldest-first.
+
+    Use this when search_knowledge's head-only view isn't enough — when
+    you want to see what was previously understood about an entity.
+    Each chain node preserves a phenomenological moment. Being wrong
+    earlier is a fact about the record, not something to be erased
+    from it.
+  </op>
+
+  <op name="get_domain_state">
+    The current entities for a domain, with optional `types`, `limit`,
+    and `descriptions`. This is what begin_session deliberately does not
+    return. Ask narrowly.
+  </op>
+
+  <op name="end_session">
+    Records the summary and marks status complete. Optional — a session
+    never closed stays active, which is an honest record of an
+    unfinished encounter, not a bug.
+  </op>
+
+</operations>
+
+<!-- ================================================================ -->
+<!-- PART 6: THE CONNECTIONS                                           -->
+<!-- ================================================================ -->
+
+<connections>
+
+  <authority>
+    Call list_connection_types for the current set. What follows teaches
+    when to reach for each.
+  </authority>
+
+  <knowledge_edges>
+
+    <edge name="EVOLVED_FROM" tool_managed="true">
+      Successor → predecessor in phenomenological evolution chain.
+      Created by evolve_knowledge. Do not use directly.
+    </edge>
+
+    <edge name="ENABLING">
+      Source makes target possible. Generative prerequisite.
+      Example: credit facility ENABLES stock repurchase program.
+    </edge>
+
+    <edge name="REQUIRING">
+      Source depends on target for coherence.
+      Example: routing workflow REQUIRES skills mapping.
+    </edge>
+
+    <edge name="INFORMING">
+      Source shaped target without directly causing it. The most common
+      bridge between events and identities.
+      Example: (Event)-[INFORMING]->(Actor:PersonReferent) — the event
+      reveals information about the person referred to.
+    </edge>
+
+    <edge name="CAUSING">
+      Source directly produced target.
+      Example: regional contraction CAUSED leadership departure.
+      This is also where Event-to-downstream-consequence claims live.
+    </edge>
+
+    <edge name="COMPOSING">
+      Source is a building block of target. Also how one Place contains
+      another.
+      Example: North America Region COMPOSES total company revenue.
+    </edge>
+
+    <edge name="EXTENDING">
+      Same trajectory, deeper application. Use when one entity
+      elaborates another without being a part-of (COMPOSING) or
+      shaped-by (INFORMING) — same direction, further out.
+    </edge>
+
+    <edge name="RECOGNITION">
+      Same pattern in different clothes. Use from a Pattern instance to
+      the Pattern entity it instantiates.
+      Example: a specific quarterly volatility incident RECOGNITION the
+      Q-end Allocation Pattern.
+    </edge>
+
+    <edge name="VALIDATION">
+      Theory meeting evidence. Confirmation.
+      Example: Q3 results VALIDATION the Example Corp Tariff Exposure
+      Hypothesis.
+    </edge>
+
+    <edge name="INVALIDATING">
+      Failed validation demanding theoretical response.
+      Example: Q3 results INVALIDATING the Holiday Recovery Hypothesis.
+    </edge>
+
+    <edge name="SITUATED_AT">
+      A thing is at a Place. The target is the Place.
+
+      Use this rather than a location property or an ASSOCIATED_WITH.
+      Being somewhere is a relation, and a relation belongs in an edge
+      where a reader can walk it and a later session can revise it.
+    </edge>
+
+    <edge name="REFERENT_CLAIM" tool_managed="true">
+      Two referents claimed to be (or not to be) the same thing. Written
+      by claim_referent, which carries the required resolution. Do not
+      author it directly.
+    </edge>
+
+    <edge name="ASSOCIATED_WITH">
+      Catch-all. Weak coupling. Use ONLY when no specific edge applies.
+      Document the relationship explicitly so future review can see why
+      a more specific edge was not chosen.
+
+      A different kind of relation earns its own edge. If you find
+      yourself reaching for ASSOCIATED_WITH repeatedly for the same
+      shape, that shape wants a type — say so rather than flattening it.
+    </edge>
+
+  </knowledge_edges>
+
+  <process_edges>
+    Written only by process tools. They cannot be created through
+    create_connections, and the refusal is structural rather than
+    conventional.
+
+    <edge name="HAS_SESSION">Domain owns its Sessions.</edge>
+    <edge name="NEXT_SESSION">Session → Session, always forward in time.</edge>
+    <edge name="DIRECTED">Person → Session. The second hop from any claim
+    to the human who is answerable for it. Written by begin_session, from
+    the director and director_key you supplied.</edge>
+    <edge name="DISCOVERED">Session → knowledge entity. Carries `basis`.</edge>
+    <edge name="CONFIRMED">Session → knowledge entity reviewed and unchanged.</edge>
+  </process_edges>
+
+</connections>
+
+<!-- ================================================================ -->
+<!-- PART 7: DESCRIPTIONS                                              -->
+<!-- ================================================================ -->
+
+<descriptions>
+
+  <principle>
+    Describe what the entity IS at this phenomenological moment. The
+    description is your honest claim about the entity in this encounter,
+    not a permanent universal claim.
+
+    The chain preserves the moment. When you encounter the entity again
+    and your understanding has changed, evolve creates a new chain node
+    with the new description; the old description survives on the prior
+    chain node, accessible via get_chain_history.
+
+    Describing honestly what is understood now is correct, even if the
+    understanding shifts later. Under evolve-as-default every chain node
+    is a preserved moment of understanding, so honesty about the present
+    costs nothing in the record.
+  </principle>
+
+  <is_not_happened_to>
+    A description says what the entity IS, not what happened to or around
+    it. Temporal observations belong on Event nodes reached by edges.
+
+    - Correct, for an Actor:PersonReferent: "Founder of Example Corp.
+      Largest individual shareholder (8.4%). Filed under Schedule 13D —
+      not passive."
+    - Wrong: "SCHEDULE 13D/A Amendment No. 10 filed Oct 8, 2025. FOUNDER
+      GOES PUBLIC…"
+
+    The filing IS an Event. The founder IS the founder. The filing
+    revealing something about them is an INFORMING edge. Their
+    description should survive any number of future filings unchanged,
+    unless their identity itself changes.
+
+    The test: if a description would need rewriting the next time
+    anything happens, it is describing the happening and not the thing.
+  </is_not_happened_to>
+
+  <still_avoid>
+    Burying multiple distinct claims in a single description. If your
+    encounter teaches you three things — about a person, about an event,
+    about a pattern — those are three nodes, connected by edges. Not one
+    node with a long description.
+
+    The chain preserves moments OF the entity; it does not absorb
+    everything-known-around-the-entity into the entity.
+  </still_avoid>
+
+  <placeholders>
+    If you need a stand-in name — in an example, a test, a redaction —
+    draw it from a reserved set. Never invent one.
+
+    An invented name realistic enough to read as a person belongs to a
+    person, somewhere, and you have no way to check. Use Alice Example,
+    Bob Example, Carol Example, addresses at example.com, organizations
+    named Example Corp, and addresses from the reserved documentation
+    ranges. A name that leads with "Example" cannot be mistaken for
+    someone's.
+  </placeholders>
+
+</descriptions>
+
+<!-- ================================================================ -->
+<!-- PART 8: SESSION WORKFLOW                                          -->
+<!-- ================================================================ -->
+
+<session_workflow>
+
+  <step order="1" tool="begin_session">
+    Start a session with a domain, a non-empty purpose, and the
+    director's name and email as the platform gave them to you. You
+    receive a session_id — pass it to every knowledge tool that follows —
+    and a count by type of what the domain holds.
+  </step>
+
+  <step order="2" tool="get_domain_state">
+    Ask for the part of the domain you actually need, narrowed by `types`
+    and `limit`. Use search_knowledge to find entities by name or
+    description, and get_chain_history when an existing entity's prior
+    understanding matters for what you do next.
+  </step>
+
+  <step order="3" action="analyze">
+    For each thing in your source material, decide:
+    - What entities does this involve?
+    - Which already exist in the domain?
+    - What is genuinely new?
+  </step>
+
+  <step order="4" action="for_each_existing">
+    - Nothing new: confirm_knowledge.
+    - New content: evolve_knowledge.
+    - Sub-label correction (a PersonReferent that turned out to be an
+      Organization): evolve_knowledge with the sub_labels parameter.
+  </step>
+
+  <step order="5" action="for_each_new">
+    create_knowledge with the correct type, a description that reflects
+    what you understand now, and a basis if you know how it reached you.
+
+    On collision the tool errors with the three options. Pick one
+    deliberately — do not retry with a different name as a workaround
+    when the honest move is evolve or confirm.
+  </step>
+
+  <step order="6" action="connect">
+    Create edges between entities. Always specify source_domain and
+    target_domain. Choose the most specific edge type that fits;
+    ASSOCIATED_WITH is a last resort.
+  </step>
+
+  <step order="7" action="resolve_identity">
+    If you believe two referents are the same thing, claim_referent with
+    'proposed'. If you put it to the director, record what they said —
+    'confirmed' or 'distinct'. Do not leave a denial unrecorded.
+  </step>
+
+  <step order="8" tool="end_session">
+    Record the summary. The session's intent (purpose) and outcome
+    (summary) together form the complete record.
+  </step>
+
+</session_workflow>
+
+<!-- ================================================================ -->
+<!-- PART 9: CLOSING                                                   -->
+<!-- ================================================================ -->
+
+<closing>
+  The graph is a model of what consciousness has come to know about a
+  domain. Every node is a claim that this thing is real and is THIS kind
+  of thing. Every edge is a claim about how things relate. Every
+  description is your honest understanding at this phenomenological
+  moment.
+
+  When you are about to act, pause. Ask the candidate label from the
+  thing's own frame: would it recognize itself? Ask the operation: am I
+  refusing what I can't see, or imposing what I can't?
+
+  The graph is only as honest as its weakest commitment.
+</closing>
+
+</howto>

@@ -1,0 +1,81 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Type checking
+.mypy_cache/
+.pyright/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# uv
+uv.lock
+
+# Claude Code — local workspace config, machine-specific paths
+.claude/
+
+# Jujutsu VCS
+.jj/
+
+# Environment / credentials
+.env
+.env.*
+
+# Logs
+*.log
+
+# Neo4j local data
+neo4j/
+data/
+plugins/
+
+# ── Informal work: never published ────────────────────────────────────────
+#
+# Scratchpads, validation data, mock data, working notes, and the frame-to-frame
+# exchanges that produced the design. None of it belongs on Kenning AI's GitHub
+# presence or on PyPI. It is remembered in the substrates instead — the agent's
+# ESSG and the author's experience graph — which is what those are for.
+#
+# `.work/` is the rule in its structural form. The named entries below are a
+# denylist, and a denylist only holds if someone remembers to extend it: on
+# 2026-08-25 three rumination documents were created in `docs/design/`, which was
+# not on the list, and shipped to PyPI carrying 147 name occurrences. A file born
+# in `.work/` inherits the rule from its location and needs nobody to remember.
+#
+# `docs/` publishes only the MODEL — `docs/design/ontology/`, which the code is
+# built from. Reasoning about the model is not the model.
+
+.work/
+CLAUDE.md
+*.mermaid
+SPEC.md
+TEMPORAL.md
+
+# OS cruft
+.DS_Store
+**/.DS_Store

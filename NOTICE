@@ -1,0 +1,14 @@
+Kenning Continuity
+Copyright 2026 Kenning AI
+
+This product includes software developed at Kenning AI (https://kenningai.com).
+
+The ontology this software implements — its type lattice, its connection
+semantics, and the structural invariants enforced in its tools — is the work of
+Kenning AI. It is licensed under the Apache License, Version 2.0, together with
+the code that enforces it. Attribution under section 4 of that license covers
+both: the model and its enforcement are one work.
+
+"Kenning" and "Kenning AI" are trademarks of Kenning AI. The Apache License,
+Version 2.0, grants no rights in those marks (section 6). See TRADEMARKS.md for
+what is permitted without asking, and how to ask.

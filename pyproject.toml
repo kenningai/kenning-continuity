@@ -1,0 +1,95 @@
+[project]
+name = "kenning-continuity"
+version = "0.1.1"
+description = "Kenning Continuity — an MCP server for domain-scoped enterprise knowledge that accumulates instead of degrading, with every invariant enforced by a tool"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE", "TRADEMARKS.md"]
+authors = [
+    { name = "Kenning AI", email = "contact@kenningai.com" },
+]
+maintainers = [
+    { name = "Kenning AI", email = "contact@kenningai.com" },
+]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "neo4j",
+    "knowledge-graph",
+    "ontology",
+    "agent-memory",
+    "llm",
+    "temporal",
+    "knowledge-management",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "fastmcp>=2.0.0",
+    "neo4j>=5.26.0",
+    "pydantic>=2.10.1",
+    "starlette>=0.28.0",
+]
+
+[project.urls]
+Homepage = "https://kenningai.com"
+Repository = "https://github.com/kenningai/kenning-continuity"
+Issues = "https://github.com/kenningai/kenning-continuity/issues"
+"The model" = "https://github.com/kenningai/kenning-continuity/tree/main/docs/design/ontology"
+"Contact the authors" = "https://github.com/kenningai/kenning-continuity/blob/main/TRADEMARKS.md#asking-and-the-standing-invitation"
+
+[tool.seal]
+publish = "pypi"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.389",
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.25.3",
+    "testcontainers[neo4j]>=4.10.0",
+    "aiohttp>=3.8.0"
+]
+
+[project.scripts]
+kenning-continuity = "kenning_continuity:main"
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+# Scoped to the shipped code. The suite passes string literals where Pydantic
+# coerces to enums, and two tests deliberately pass a removed field to assert
+# it is refused — pyright is right that the parameter is gone, which is the
+# point of the test. Widening this to `tests` would trade 53 findings of that
+# kind for no defect caught, and a gate that reports noise gets switched off.
+include = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "src"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kenning_continuity"]
+
+# HOWTO.xml is the operator-facing teaching the README tells you to give an
+# LLM. It shipped in the sdist and not the wheel, so every `pip install` user
+# was pointed at a file they did not have. It travels with the package now.
+[tool.hatch.build.targets.wheel.force-include]
+"HOWTO.xml" = "kenning_continuity/HOWTO.xml"
