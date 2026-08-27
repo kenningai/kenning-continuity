@@ -1,6 +1,6 @@
 [project]
 name = "kenning-continuity"
-version = "0.1.2"
+version = "0.2.0"
 description = "Kenning Continuity — an MCP server for domain-scoped enterprise knowledge that accumulates instead of degrading, with every invariant enforced by a tool"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -54,6 +54,19 @@ Issues = "https://github.com/kenningai/kenning-continuity/issues"
 [tool.seal]
 publish = "pypi"
 
+# Every partition runs at seal, and each is reported on its own line with its
+# own count. A single total is how a skipped half stays invisible: this repo's
+# v0.1.0 shipped "81 unit tests passing" — true, and silent about the five red
+# integration tests nobody had run. The integration suite is the expensive half
+# and therefore the one that gets skipped, and it is also the only half that
+# can see a defect living in a Cypher query, because the unit tests mock the
+# substrate.
+test = [
+  "./.venv/bin/pytest tests/unit",
+  "./.venv/bin/pytest tests/integration",   # requires Docker
+  "./.venv/bin/pyright",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -99,8 +112,12 @@ pythonpath = [
 # Its header forbids a real name ever going in, but if one did, shipping it
 # would publish that name AND annotate it as reviewed. Out of the artifact, that
 # mistake stays recoverable; in a published sdist it never would be.
+#
+# The release notes and any accepted-drift ruling are the same kind of file:
+# read by the release ritual, published on the GitHub release page, and no part
+# of what an installer needs.
 [tool.hatch.build.targets.sdist]
-exclude = [".pii-allow"]
+exclude = [".pii-allow", ".release-notes", ".seal-accepted-drift"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kenning_continuity"]

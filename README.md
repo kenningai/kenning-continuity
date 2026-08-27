@@ -8,8 +8,8 @@ enforced by a tool rather than asked for in an instruction, and no raw Cypher
 write is exposed — so the graph cannot corrupt itself no matter what the model
 decides to do.
 
-It is in production at an enterprise scale: 37 domains, 376 sessions, and
-3,000+ knowledge entities accumulated over four months of daily use.
+It is in production at an enterprise scale: 57 domains, 619 sessions, and
+about 5,400 knowledge nodes accumulated over six months of daily use.
 
 ## Why this does not degrade as it fills
 
@@ -27,6 +27,15 @@ Four commitments, all enforced structurally:
 linked to its predecessor by `EVOLVED_FROM`. The prior understanding is still
 there, still readable, still attributable. Being wrong earlier is a fact about
 the record, not something to be erased from it.
+
+The reason for a revision is required, and it is held by the `EVOLVED_FROM`
+edge rather than written into the new description, which says only what the
+entity is. A chain is a line: a version has at most one successor, so two
+sessions revising the same thing at once cannot leave two current versions.
+Nothing compacts a chain and nothing deletes one. The person directing a
+session is the one whose knowledge the graph holds, and a claim an earlier
+version made, which no later version contradicts, was true as of when it was
+stated.
 
 **Every claim reaches its author in two hops.** A knowledge entity is
 discovered by a `Session`; a `Session` is directed by a `Person`. Both edges
@@ -146,7 +155,7 @@ kenning-continuity \
   --allowed-hosts "localhost,127.0.0.1"
 ```
 
-## Tool surface (23 tools)
+## Tool surface (24 tools)
 
 A session runs: `create_domain` (once) → `begin_session` →
 create / evolve / confirm / connect knowledge → `end_session`.
@@ -169,14 +178,13 @@ the state inline was 600,820 characters on one production domain — roughly
 150k tokens spent before the session had asked a question. Call
 `get_domain_state` with `types` and `limit` for the part you actually need.
 
-### Knowledge mutation (6)
+### Knowledge mutation (5)
 
 | Tool | Description |
 |---|---|
 | `create_knowledge` | Create entities. Refuses on collision, refuses process types, and refuses unknown fields rather than dropping them |
-| `evolve_knowledge` | The only way to change a description. Creates a new chain node preserving the prior one via `EVOLVED_FROM`; keeps the ontological type, replaces the sub-label set |
+| `evolve_knowledge` | The only way to change a description. Creates a new chain node preserving the prior one via `EVOLVED_FROM`, and requires a `revision_why` that it stores on that edge; keeps the ontological type, replaces the sub-label set |
 | `confirm_knowledge` | Record that entities were reviewed and found unchanged |
-| `merge_knowledge` | Compact an `EVOLVED_FROM` chain into one canonical node. **Destructive — cannot be undone** |
 | `create_connections` | Link entities. Takes a `session_id` and records it on every edge — an edge is an assertion and reaches its author |
 | `claim_referent` | Claim two referents are the same thing, with a required `resolution`: `proposed`, `confirmed`, or `distinct` |
 
@@ -187,7 +195,7 @@ the state inline was 600,820 characters on one production domain — roughly
 | `search_knowledge` | Fulltext across names and descriptions, head-of-chain only |
 | `get_domain_state` | Current entities for a domain; optional `types`, `limit`, `descriptions` |
 | `get_session_history` | Who worked on what, when, and toward what purpose |
-| `get_chain_history` | Walk `EVOLVED_FROM` backward — what was previously understood |
+| `get_chain_history` | Walk `EVOLVED_FROM` backward — what was previously understood, why each version replaced the last, and who wrote it |
 | `read_cypher` | Read-only Cypher escape hatch; writes are rejected |
 
 ### Taxonomy (2)
@@ -197,15 +205,17 @@ the state inline was 600,820 characters on one production domain — roughly
 | `list_knowledge_types` | 11 ontological types and 7 sub-labels, with the lattice |
 | `list_connection_types` | 13 knowledge and 5 process edge types |
 
-### Graph analytics (6)
+### Graph analytics (8)
 
 | Tool | Description |
 |---|---|
-| `gds_create_projection` | Create a GDS graph projection |
+| `gds_create_projection` | Create a GDS graph projection, optionally scoped to one domain by walk; refuses rather than returning an empty one |
 | `gds_drop_projection` | Drop a projection |
 | `gds_pagerank` | PageRank centrality |
+| `gds_articlerank` | ArticleRank — PageRank with hub transmission damped; the gap between the two shows centrality borrowed from hubs |
 | `gds_betweenness` | Betweenness centrality — bridge nodes |
 | `gds_louvain` | Louvain community detection |
+| `gds_leiden` | Leiden community detection — every community it returns is internally connected |
 | `gds_wcc` | Weakly connected components |
 
 ## Type system

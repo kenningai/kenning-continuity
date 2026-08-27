@@ -26,3 +26,4 @@ Merged Layers	test fixture entity name, not a person
 Pydantic Models	source section heading
 Namespace The	sentence-initial after a config key in prose
 Ali Exmpl	deliberate misspelling of the Alice Example placeholder, illustrating that a reference can be wrong
+The MCP	sentence-initial article before the protocol acronym, "The MCP handshake"

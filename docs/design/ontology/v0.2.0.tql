@@ -1,0 +1,283 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Kenning Continuity — v0.2.0 ontology
+#
+# What changed from v0.1.1, and only this:
+#   · `evolved-from` owns `revision-why` — the reason for a revision, held by
+#     the edge between the two versions instead of written into a description.
+#   · A knowledge node plays `evolved-from:predecessor` at most once and
+#     `evolved-from:successor` at most once. A chain is a line, never a tree:
+#     two successors of one predecessor would be two current versions of one
+#     thing, and no reader could say which the object holds.
+#   · Nothing in this model is ever deleted, and no relation exists to compact
+#     a chain; `merge_knowledge` is removed from the tool surface. In this
+#     graph the human is the object: they author their own experience through
+#     the tool, and the system does not decide what they hold as true. A
+#     version nothing later claims against remains true as of when it was
+#     stated.
+#
+# The model the implementation is built from. Authored here in TypeQL and
+# loaded against a live TypeDB server before any Python was written; where the
+# code and this file disagree, this file wins and the code is the defect.
+#
+# What it declares:
+#   · Person in the PROCESS layer — the intentional vector, which exists iff
+#     it directed a session. Never a string on an edge.
+#   · Eleven ontological types, Place among them.
+#   · Sub-labels with their constitutive chains DECLARED, not held in a map
+#     the code has to remember to walk.
+#   · referent-claim, carrying co-reference as a CLAIM with a denial slot.
+#   · Epistemic standing on the occasion of discovery, never on the entity.
+#
+# WHAT WAS PROPOSED AND REFUSED — Inquiry.
+#   A draft put Inquiry in the process layer as directed incompleteness. It
+#   is struck, and not for cost: it is out of frame.
+#
+#   This graph is category-2 — collective, institutional knowledge. An
+#   intention a person has not yet acted on is category-1: it is in their
+#   head, it is theirs, and it is not corporate knowledge until they choose
+#   to actualize it. When they do, it arrives here as knowledge THEN,
+#   discovered in a session, attributed to its director. So there is no
+#   moment at which the thing exists and this graph cannot hold it, and the
+#   inability to record an unacted intention is the ontology being correct
+#   rather than a gap in it.
+#
+#   Two things the draft got wrong are worth keeping as warnings. `inquiry`
+#   owned `question` — the inquiry's CONTENT, on a process-layer node, in
+#   violation of the identity-only rule `person` was given three lines
+#   above it. And the pre-registered Phase 2 falsifier tested the wrong
+#   proposition: it asked whether session purposes cluster into recurring
+#   investigations, which they do, hard. But clustering shows an agent
+#   improvising continuity in a prose field. It says nothing about whether
+#   that continuity belongs in THIS graph. A confirmed falsifier for an
+#   out-of-frame structure confirms nothing.
+#
+#   What openness this graph does carry, it carries already: Challenge is a
+#   knowledge node, and every one of them resolves through DISCOVERED and
+#   DIRECTED to exactly one Person. Whose openness is answerable, and cannot
+#   be ambiguous — `directed` is card(1..1).
+#
+# Loaded and validated against TypeDB 3.12.3.
+# ═══════════════════════════════════════════════════════════════════════════
+
+define
+
+# ─── attributes ────────────────────────────────────────────────────────────
+
+attribute name value string;
+attribute description value string;
+attribute t-created value datetime;
+attribute t-valid value datetime;
+attribute source value string;
+attribute source-key value string;
+
+attribute session-id value string;
+attribute purpose value string;
+attribute summary value string;
+attribute session-timestamp value datetime;
+
+# Bounded vocabularies. In Neo4j these are free strings validated in Python,
+# or not validated at all.
+attribute attribution-method value string
+  @values("platform-stated", "named-in-text", "chat-correlated", "domain-inferred");
+attribute basis value string
+  @values("stated", "inferred", "read-from-document");
+attribute resolution value string
+  @values("proposed", "confirmed", "distinct");
+attribute session-status value string @values("active", "complete");
+
+# Why a description changed. Free prose, because the reasons a person revises
+# what they know have no vocabulary to bound them.
+attribute revision-why value string;
+
+# ─── process layer ─────────────────────────────────────────────────────────
+# Membership criterion: the capacity to hold possible futures and measure
+# them toward actualization. Nothing here is a referent.
+
+relation directed,
+  relates director @card(1..1),
+  relates act     @card(1..1),
+  owns attribution-method @card(1..1);
+
+# `attribution-method` is required, not optional, and it carries the epistemic
+# standing of the attribution by itself — there is no separate confidence here.
+# The first three values are routes by which the source was ESTABLISHED; the
+# fourth is a route by which it was GUESSED. A confidence score alongside would
+# be a softer restatement of the same fact, unreproducible by anyone else, and
+# free-floating in exactly the way that left entity-level `confidence` set on
+# 2 nodes out of 2,629.
+#
+# 15 of the 65 recovered attributions are confirmed and 50 are inferences.
+# Writing them indistinguishably would leave the graph unable to separate
+# measured noesis from inferred noesis — by this ontology's own argument, the
+# difference between knowledge and data.
+
+relation has-session, relates owner, relates held;
+relation next-session, relates earlier, relates later;
+
+
+relation discovered,
+  relates discoverer,
+  relates found,
+  owns basis;
+
+relation confirmed, relates confirmer, relates unchanged;
+
+entity person,
+  owns name,
+  owns source-key @key,
+  plays directed:director;
+
+# The whole person-layer finding, in five lines. There is no description and
+# no t-created: process-layer Alice IS Alice at the moment of that session, and
+# a description would freeze one moment onto a node that spans all of them.
+# `person` plays no knowledge-link role, so the knowledge layer cannot reach
+# it in either direction.
+
+
+entity domain,
+  owns name @key,
+  owns description,
+  owns t-created,
+  plays has-session:owner;
+
+entity session,
+  owns session-id @key,
+  owns session-timestamp,
+  owns purpose,
+  owns summary,
+  owns session-status @card(1..1),
+  plays directed:act,
+  plays has-session:held @card(1..1),
+  plays next-session:earlier,
+  plays next-session:later,
+  plays discovered:discoverer,
+  plays confirmed:confirmer;
+
+# ─── knowledge layer ───────────────────────────────────────────────────────
+# Everything here is a referent — the residue of an intentional vector, never
+# the vector. No type below plays any process-layer role, in either direction.
+
+relation evolved-from,
+  relates successor @card(1..1),
+  relates predecessor @card(1..1),
+  owns revision-why;
+
+# `revision-why` is optional HERE and required by the tool, and both are true.
+# Every revision made from v0.2.0 on carries one: `evolve_knowledge` refuses
+# without it. The edges written before v0.2.0 carry none, and they are left
+# that way — a reason nobody recorded, written in afterwards, would be a claim
+# no session made. The model has to admit the past as it is, so the
+# requiredness lives in the tool, like `discovered:found` on a knowledge node.
+#
+# The revising session is NOT on this edge. It is one hop away already:
+# (session)-[:DISCOVERED]->(successor)-[:EVOLVED_FROM]->(predecessor), both
+# written in one statement. A copy here is the denormalization this model
+# removes everywhere else. Contrast `knowledge-link`, whose session_id exists
+# because a link has no node of its own to hang provenance from; an
+# evolution does.
+
+# Every knowledge edge is discovered by a session — an edge is an assertion,
+# and an assertion nobody made is the one thing this ontology has no room for.
+#
+# NEO4J CANNOT HOLD THIS SHAPE: a relationship may not be the endpoint of
+# another relationship. It is represented as a `session_id` property on every
+# knowledge edge, which reaches the author in two hops — Session <- DIRECTED <-
+# Person. See README.md, "Where TypeQL and Neo4j do not line up".
+relation knowledge-link @abstract,
+  relates link-source,
+  relates link-target,
+  plays discovered:found @card(1..1);
+relation enabling         sub knowledge-link;
+relation requiring        sub knowledge-link;
+relation informing        sub knowledge-link;
+relation causing          sub knowledge-link;
+relation composing        sub knowledge-link;
+relation extending        sub knowledge-link;
+relation recognition      sub knowledge-link;
+relation validation       sub knowledge-link;
+relation invalidating     sub knowledge-link;
+relation associated-with  sub knowledge-link;
+relation situated-at      sub knowledge-link;
+
+# The co-reference claim. Not an identity — a claim, authored by a stochastic
+# meaning-maker, adjudicated by the human directing the session, and carrying
+# the answer NO so a denial does not evaporate and get re-asked forever.
+relation referent-claim sub knowledge-link,
+  owns resolution @card(1..1);
+
+entity knowledge @abstract,
+  owns name,
+  owns description,
+  owns t-created,
+  owns t-valid,
+  owns source,
+  plays discovered:found @card(1..),
+  plays confirmed:unchanged,
+  plays evolved-from:successor @card(0..1),
+  plays evolved-from:predecessor @card(0..1),
+  plays knowledge-link:link-source,
+  plays knowledge-link:link-target;
+
+# NOTE — `t-superseded` is gone from here. A chain node's supersession time IS
+# its successor's `t-created`: one hop across `evolved-from`, no ambiguity. The
+# same argument keeps `t-created` off `evolved-from` and off `directed`, and a
+# stored copy is the denormalization this release removes everywhere else.
+#
+# NOTE — `confidence` is gone, and not relocated. An earlier draft moved it
+# onto `discovered` on the grounds that there is only someone's confidence, on
+# an occasion. That grounds is right and the conclusion did not follow: someone's
+# confidence on an occasion is a fact about their conscious experience at that
+# moment, which is category-1. Putting it on the occasion relocates the category
+# error rather than fixing it.
+#
+# It also does not transmit. A person reading this graph next year derives their
+# own confidence from what the description says against what they know. Alice's
+# certainty in June is not available to them and would not be theirs to use if it
+# were — it was true for one moment and is never re-measured.
+#
+# It was set on 2 entities out of 2,629, valued 1.0 and 0.95, and nobody meant
+# the difference. It went unused because there was nothing to express.
+#
+# What it reached for is already here, in the edges: `validation` (theory
+# meeting evidence), `invalidating` (failed validation demanding a response),
+# and a `challenge` with no paired `solution`. Epistemic standing in this graph
+# is an authored relation between claims, adjudicable by any reader from their
+# own frame — not a number one person left behind.
+#
+# `basis` stays, because it is a different kind of thing: not a mental state but
+# what happened. Whether a claim came from a person speaking in a room or from a
+# whitepaper being ingested is third-person, checkable by anyone, and does not
+# decay. It is the same shape as `method` on `directed`.
+
+# ─── the 11 ontological types ──────────────────────────────────────────────
+entity actor      sub knowledge;
+entity structure  sub knowledge;
+entity artifact   sub knowledge;
+entity place      sub knowledge;
+entity event      sub knowledge;
+entity insight    sub knowledge;
+entity pattern    sub knowledge;
+entity challenge  sub knowledge;
+entity solution   sub knowledge;
+entity lesson     sub knowledge;
+entity rationale  sub knowledge;
+
+# ─── sub-labels, with their chains declared ────────────────────────────────
+# The collision TypeDB refused (SVL42): `person` was declared once in the
+# process layer as the vector and once here as a referent, and the schema
+# would not commit. Neo4j labels both :Person and never says a word — which
+# is how the doubling reached the theory document. The knowledge-layer one is
+# a referent ABOUT a person, and is named as such. Note that this is the ONLY
+# name that collides across the two layers, because a person is the only
+# thing that is both a vector and something people talk about.
+entity person-referent sub actor;
+entity organization  sub actor;
+entity team          sub organization;
+entity system        sub structure;
+entity process       sub structure;
+entity configuration sub structure;
+entity service       sub structure;
+
+# `team sub organization sub actor` is the three-deep chain that
+# SUB_LABEL_TO_ONT_TYPE cannot hold — a flat sub-label→root map would emit
+# :Actor:Team and silently drop Organization.

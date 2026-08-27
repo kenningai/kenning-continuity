@@ -309,7 +309,8 @@ class TestTheKnowledgeMarker:
         await substrate.create_knowledge(r["session_id"], [KnowledgeEntity(
             name="Marked On Evolve", type="System", domain="Telephony", description="first")])
         await substrate.evolve_knowledge(
-            r["session_id"], "Marked On Evolve", "second", domain="Telephony")
+            r["session_id"], "Marked On Evolve", "second",
+            revision_why="the first description was a placeholder", domain="Telephony")
         unmarked = await _count(
             substrate,
             "MATCH (n {name: 'Marked On Evolve'}) WHERE NOT n:Knowledge RETURN count(n)")

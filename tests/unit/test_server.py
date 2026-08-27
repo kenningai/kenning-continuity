@@ -56,7 +56,6 @@ class TestNamespacing:
         substrate.end_session = AsyncMock(return_value={"session_id": "test-123", "domain": "test", "timestamp": None, "purpose": "p", "summary": "done", "status": "complete", "entities_discovered": 0, "entities_confirmed": 0})
         substrate.create_knowledge = AsyncMock(return_value=[])
         substrate.evolve_knowledge = AsyncMock(return_value={"name": "test", "ont_type": "Actor", "labels": ["Actor", "PersonReferent"], "domain": "test", "description": "evolved", "evolved": True})
-        substrate.merge_knowledge = AsyncMock(return_value={"name": "test", "domain": "test", "ont_type": "Actor", "labels": ["Actor", "PersonReferent"], "duplicates_removed": 3, "edges_redirected": 5, "absorbed_descriptions": [], "merged": True})
         substrate.confirm_knowledge = AsyncMock(return_value=[{"name": "test", "ont_type": "Structure", "labels": ["Structure", "System"], "domain": "test", "description": "test", "confirmed": True}])
         substrate.create_connections = AsyncMock(return_value=[])
         substrate.search_knowledge = AsyncMock(return_value=domain_knowledge)
@@ -75,15 +74,16 @@ class TestNamespacing:
             "test-ns-list_domains", "test-ns-create_domain",
             "test-ns-begin_session", "test-ns-end_session",
             "test-ns-create_knowledge", "test-ns-evolve_knowledge",
-            "test-ns-confirm_knowledge", "test-ns-merge_knowledge",
+            "test-ns-confirm_knowledge",
             "test-ns-create_connections",
             "test-ns-search_knowledge", "test-ns-get_domain_state",
             "test-ns-get_session_history", "test-ns-get_chain_history",
             "test-ns-read_cypher",
             "test-ns-list_knowledge_types", "test-ns-list_connection_types",
             "test-ns-gds_create_projection", "test-ns-gds_drop_projection",
-            "test-ns-gds_pagerank", "test-ns-gds_betweenness",
-            "test-ns-gds_louvain", "test-ns-gds_wcc",
+            "test-ns-gds_pagerank", "test-ns-gds_articlerank",
+            "test-ns-gds_betweenness",
+            "test-ns-gds_louvain", "test-ns-gds_leiden", "test-ns-gds_wcc",
         ]
 
         for expected_tool in expected_tools:
@@ -101,6 +101,18 @@ class TestNamespacing:
         assert "update_knowledge" not in names
         assert "retype_knowledge" not in names
         assert "get_run_history" not in names  # renamed to get_session_history
+
+    @pytest.mark.asyncio
+    async def test_merge_knowledge_is_gone(self, mock_substrate):
+        """v0.2.0: no tool compacts a chain.
+
+        The human is the object here, and the system does not decide what
+        they hold as true. Asserted on the substrate as well as the surface,
+        so it cannot come back as a method some later tool reaches for.
+        """
+        names = await _tool_names(create_mcp_server(mock_substrate))
+        assert "merge_knowledge" not in names
+        assert not hasattr(TemporalKnowledgeSubstrate, "merge_knowledge")
 
     @pytest.mark.asyncio
     async def test_namespace_tool_functionality(self, mock_substrate):
@@ -137,14 +149,23 @@ class TestNamespacing:
             expected = f"{namespace}-search_knowledge"
             assert expected in names
 
-    @pytest.mark.asyncio
-    async def test_v0_8_0_tool_count(self, mock_substrate):
-        """v0.8.0 ships 23 tools: 4 process + 6 knowledge + 5 query + 2 taxonomy + 6 GDS.
+    def test_server_reports_its_own_version(self, mock_substrate):
+        """The MCP handshake's serverInfo.version is this package's, not fastmcp's."""
+        from importlib.metadata import version
+        server = create_mcp_server(mock_substrate)
+        assert server.version == version("kenning-continuity")
+        assert server.version != version("fastmcp")
 
-        claim_referent is the addition — co-reference as an authored claim.
+    @pytest.mark.asyncio
+    async def test_tool_count(self, mock_substrate):
+        """24 tools: 4 process + 5 knowledge + 5 query + 2 taxonomy + 8 GDS.
+
+        v0.8.0 of the predecessor added claim_referent, co-reference as an
+        authored claim, for 23. v0.2.0 removes merge_knowledge and adds
+        gds_articlerank and gds_leiden, for 24.
         """
         default_names = await _tool_names(create_mcp_server(mock_substrate))
-        assert len(default_names) == 23
+        assert len(default_names) == 24
         assert "claim_referent" in default_names
 
 

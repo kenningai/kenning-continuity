@@ -130,10 +130,8 @@
   The mutating operations are:
   - create_knowledge: for genuinely new entities. Refuses on collision.
   - evolve_knowledge: for changed content. Creates a new chain node;
-    preserves the prior chain node honestly.
+    preserves the prior chain node honestly. Requires revision_why.
   - confirm_knowledge: for "I encountered this and nothing changed."
-  - merge_knowledge: chain compaction when a chain grew through
-    exploratory churn rather than genuine succession. Destructive.
   - claim_referent: for "these two referents are (or are not) the same
     thing." A claim you make, not a structure the tool infers.
   - create_connections: for how things relate. An edge is an assertion,
@@ -142,6 +140,12 @@
   The accumulated chain IS the substrate. Every evolve preserves a
   phenomenological moment. Use get_chain_history to walk the chain
   backward and see what was previously understood.
+
+  Nothing compacts a chain, and nothing deletes. The human directing a
+  session is the one whose experience the graph holds; the tool does not
+  decide what they hold as true. A claim an earlier version made, which no
+  later version contradicts, was true as of when it was stated. Read the
+  chain for it; do not infer past it.
 
 </operator_job>
 
@@ -405,14 +409,6 @@
       <yes>claim_referent. Never assume it from the name.</yes>
     </step>
 
-    <step id="4">
-      Has the chain accumulated nodes that don't reflect genuine
-      phenomenological succession (exploratory churn, accidental
-      duplicates)?
-      <yes>merge_knowledge — compact the chain into the head. Returns
-      absorbed descriptions for relocation to Event nodes.</yes>
-    </step>
-
   </decision_tree>
 
   <op name="begin_session">
@@ -464,6 +460,19 @@
     EVOLVED_FROM to the old head. The new node becomes the head. The
     ontological type is preserved (chain invariant).
 
+    Required: revision_why — why the description is changing: what was
+    learned, corrected, or found missing. It is stored on the
+    EVOLVED_FROM edge. A blank one is refused.
+
+    The reason goes there and NOT into the description. A description
+    says what the entity is. "CORRECTION: the priority was P3, not P2"
+    written into it describes the record instead of the thing, and every
+    later reader inherits the argument rather than the fact. Write
+    "Priority P3." as the description and the correction as the reason.
+
+    Only the current head can be evolved. If another session evolved it
+    first, the call is refused; read the chain and evolve the new head.
+
     Optional: sub_labels (REPLACES the set; inherits when omitted),
     basis, sources, t_valid. These are set on the new chain node only and
     do not carry forward automatically.
@@ -475,20 +484,6 @@
     the observation.
 
     Being unchanged is a finding. Record it.
-  </op>
-
-  <op name="merge_knowledge">
-    Compacts an EVOLVED_FROM chain into the head-of-chain canonical
-    node. All edges from chain duplicates are redirected to the
-    canonical. Duplicate nodes (and the EVOLVED_FROM edges between
-    them) are deleted.
-
-    Returns absorbed_descriptions ordered by t_created. Relocate
-    temporal observations from these to Event nodes so no information
-    is lost.
-
-    Sub-label history is NOT preserved across compaction — only the
-    canonical's sub-labels survive. DESTRUCTIVE, and cannot be undone.
   </op>
 
   <op name="claim_referent">
@@ -528,7 +523,13 @@
 
   <op name="get_chain_history">
     Walks EVOLVED_FROM backward from head-of-chain. Returns all chain
-    nodes ordered oldest-first.
+    nodes ordered oldest-first, by position in the chain.
+
+    Each step carries revision_why — the reason it replaced the step
+    before — and discovered_by, the session and director that wrote it.
+    revision_why is null on the first step, which replaced nothing, and
+    on revisions made before reasons were recorded. Do not supply a
+    reason for those; none was given.
 
     Use this when search_knowledge's head-only view isn't enough — when
     you want to see what was previously understood about an entity.
@@ -566,7 +567,8 @@
 
     <edge name="EVOLVED_FROM" tool_managed="true">
       Successor → predecessor in phenomenological evolution chain.
-      Created by evolve_knowledge. Do not use directly.
+      Created by evolve_knowledge. Do not use directly. Carries
+      revision_why. A node has at most one successor: a chain is a line.
     </edge>
 
     <edge name="ENABLING">

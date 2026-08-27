@@ -5,7 +5,8 @@ implementation is downstream of this directory, not alongside it.
 
 | file | what it is |
 |---|---|
-| `v0.1.1.tql` | the ontology as shipped — what the tools enforce today |
+| `v0.2.0.tql` | the ontology the tools enforce: `evolved-from` owns `revision-why`, and a chain is a line |
+| `v0.1.1.tql` | the ontology as first shipped, kept as the record of what v0.1.x enforced |
 
 ## The loop
 
@@ -128,7 +129,39 @@ cannot tell you the TypeQL still commits — a file edited by hand can be
 syntactically dead and the parser will not notice.
 
 So the model is reloaded from scratch into a fresh database and probed, and the
-probes assert refusals as well as acceptances. Last run, 12 for 12:
+probes assert refusals as well as acceptances:
+
+```
+uv run scripts/model_probe.py --url http://localhost:8000
+```
+
+Each probe gets its own database, the seed is asserted to have committed before
+any verdict is read, and a refusal only counts if it carries the expected error
+code — a probe refused by a parse error (`REP1`) is a broken probe, not a
+correct refusal, and a verdict-only check cannot tell the two apart.
+
+v0.2.0, run 2026-10-17 against TypeDB 3.12.3, 12 for 12:
+
+| probe | verdict |
+|---|---|
+| a person directs a session | ACCEPT |
+| a person-**referent** directs a session | REFUSE `INF11` |
+| `referent-claim` with resolution `maybe` | REFUSE `CNT8` |
+| `referent-claim` with resolution `distinct`, discovered | ACCEPT |
+| a knowledge entity no session discovered | REFUSE `CNT5` |
+| an evolution carrying `revision-why` | ACCEPT |
+| an evolution without `revision-why` — the pre-v0.2.0 past | ACCEPT |
+| a second successor of one predecessor — a fork | REFUSE `CNT5` |
+| one successor evolving from two predecessors | REFUSE `CNT5` |
+| an evolution with two `revision-why`s | REFUSE `CNT5` |
+| `revision-why` on a knowledge link | REFUSE `INF11` |
+| a chain of two steps, each with a reason | ACCEPT |
+
+Shown two-sided by running the same probes against `v0.1.1.tql`: the fork and
+the two-predecessor evolution are **accepted** there, so it is the v0.2.0
+`@card(0..1)` on the roles that refuses them, not anything else in the seed.
+
+v0.1.1, the hand-run predecessor of this script, 12 for 12:
 
 | probe | verdict |
 |---|---|
@@ -181,6 +214,8 @@ check these, because they are about what the two formalisms can say at all.
 | `owns source-key @key` — unique AND required | require a property (Community edition) | uniqueness constraint in `ensure_schema`, requiredness in `_validate_director` | Existence constraints are Enterprise-only and the test image is Community. The required half is enforced where the rest of the guard already is. |
 | `knowledge plays discovered:found @card(1..)` — no knowledge entity exists that no session discovered | require a node to participate in a relationship | `create_knowledge` and `evolve_knowledge` write the `DISCOVERED` edge in the same statement that creates the node | The model **refuses** an orphan outright — an `insert` of an undiscovered `insight` fails with `CNT5` at commit. Neo4j will happily hold one, so the guarantee is the tool's. |
 | `knowledge-link plays discovered:found @card(1..1)` again, from the write side | as above, for relationships | `session_id` is a **required** argument to `create_connections` and `claim_referent`, not an optional one | A `referent-claim` inserted with no discovering session fails with `CNT5`. The model does not treat edge provenance as a nice-to-have, so neither does the tool. |
+| `knowledge plays evolved-from:predecessor @card(0..1)` — a chain is a line; no node has two successors | enforce a relationship count per node (Community edition) | `evolve_knowledge` takes a write lock on the predecessor and re-checks it is still head inside the same transaction that writes the successor | Without the lock, two sessions evolving one head concurrently both pass the check and both write, and the chain forks into two current versions. Shown in `tests/integration/test_evolve.py` by racing two evolves: exactly one succeeds. |
+| `evolved-from owns revision-why`, optional in the model | require it only from v0.2.0 on | `revision_why` is a **required** argument to `evolve_knowledge`; a blank one is refused | The model admits the past as it is: edges written before v0.2.0 carry no reason and none is written in afterwards, since a reason nobody recorded would be a claim no session made. The requirement is the tool's, from the version that introduced it. |
 | relation names are hyphenated lowercase (`associated-with`, `next-session`) | — | `SCREAMING_SNAKE` (`ASSOCIATED_WITH`, `NEXT_SESSION`) | Notation, not meaning. The gate converts between them so a rename in either place fails. |
 | entity names are hyphenated lowercase (`person-referent`) | — | `PascalCase` labels (`PersonReferent`) | As above. |
 

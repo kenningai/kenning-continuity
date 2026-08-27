@@ -380,6 +380,37 @@ class Connection(BaseModel):
     t_created: str | None = Field(default=None, description="ISO datetime when created. Auto-set.")
 
 
+class ChainAuthor(BaseModel):
+    """A session that discovered a chain node, and the person who directed it."""
+    session_id: str
+    director: str | None = None
+    timestamp: str | None = None
+    purpose: str | None = None
+
+
+class ChainStep(BaseModel):
+    """One version in an EVOLVED_FROM chain, as get_chain_history returns it.
+
+    `revision_why` is the reason this version replaced the one before it, read
+    from the EVOLVED_FROM edge. It is None for the first version, which
+    replaced nothing, and for revisions made before v0.2.0, which recorded no
+    reason — and none is supplied for them.
+
+    `discovered_by` is a list, not one author, and is returned as found. A
+    version is written by exactly one session, but merge_knowledge (removed in
+    v0.2.0) re-pointed predecessors' DISCOVERED edges onto heads, so a node it
+    touched can carry several. Picking one would hide that it happened.
+    """
+    name: str
+    type: str
+    labels: list[str] | None = None
+    domain: str
+    description: str
+    t_created: str | None = None
+    revision_why: str | None = None
+    discovered_by: list[ChainAuthor] = Field(default_factory=list)
+
+
 class DomainKnowledge(BaseModel):
     """Knowledge graph slice containing entities and their connections."""
     entities: List[KnowledgeEntity] = Field(default=[], description="List of knowledge entities")
@@ -858,6 +889,7 @@ class TemporalKnowledgeSubstrate:
         session_id: str,
         name: str,
         description: str,
+        revision_why: str,
         domain: str = "",
         sub_labels: list[str] | None = None,
         basis: "Basis | None" = None,
@@ -872,8 +904,25 @@ class TemporalKnowledgeSubstrate:
         sources/t_valid set on the new node and basis on its DISCOVERED edge;
         these do not carry
         forward automatically across chain nodes.
+
+        `revision_why` is required and lands on the EVOLVED_FROM edge. The
+        edge is the only place a reason for a revision can live without being
+        written into the description, which says what the entity IS.
+
+        The head lookup, its write lock, the re-check under that lock and the
+        write all run in one transaction. Two sessions evolving one head at
+        once would otherwise both pass a separate check and fork the chain.
         """
         logger.info(f"evolve_knowledge: {name}")
+
+        if not revision_why or not revision_why.strip():
+            raise ValueError(
+                f"Cannot evolve '{name}': revision_why is required. Say why the "
+                f"description is changing — what was learned, corrected or "
+                f"found missing. It is stored on the EVOLVED_FROM edge, so the "
+                f"reason travels with the revision and stays out of the "
+                f"description, which says what the entity is."
+            )
 
         if not domain:
             domain_result = await self.driver.execute_query(
@@ -886,81 +935,100 @@ class TemporalKnowledgeSubstrate:
                 raise ValueError(f"Session '{session_id}' not found.")
             domain = domain_result.records[0]["domain"]
 
-        head_result = await self.driver.execute_query(
-            "MATCH (:Domain {name: $domain})-[:HAS_SESSION]->(:Session)"
-            "-[:DISCOVERED]->(e:Knowledge {name: $name}) "
-            "WHERE NOT (e)<-[:EVOLVED_FROM]-() "
-            "RETURN labels(e) AS labels, e.ont_type AS ont_type",
-            {"name": name, "domain": domain},
-            routing_control=RoutingControl.READ,
-        )
-
-        if not head_result.records:
-            raise ValueError(
-                f"Knowledge entity '{name}' not found in domain '{domain}', "
-                f"or it has already been evolved (not head of chain)."
+        async def _do_evolve(tx):
+            head = await tx.run(
+                load_cypher("knowledge_evolve_head"),
+                {"name": name, "domain": domain},
             )
+            heads = [r async for r in head]
 
-        old_labels = list(head_result.records[0]["labels"])
-        ont_type = head_result.records[0]["ont_type"]
-        if ont_type is None:
-            # Defensive: pre-migration nodes may lack ont_type. Derive from labels.
-            ont_type, _ = _split_labels(old_labels)
-            if ont_type is None:
+            if not heads:
                 raise ValueError(
-                    f"Cannot evolve '{name}' in domain '{domain}': head node "
-                    f"lacks an ontological label. Run the v0.7.0 migration first."
+                    f"Knowledge entity '{name}' not found in domain '{domain}', "
+                    f"or it has already been evolved (not head of chain)."
+                )
+            if len(heads) > 1:
+                raise ValueError(
+                    f"Cannot evolve '{name}' in domain '{domain}': {len(heads)} "
+                    f"chains have a head by that name. Refusing to pick one."
                 )
 
-        if sub_labels is None:
-            _, inherited_subs = _split_labels(old_labels)
-            new_subs = inherited_subs
-        else:
-            new_subs = list(sub_labels)
+            old_labels = list(heads[0]["labels"])
+            ont_type = heads[0]["ont_type"]
+            if ont_type is None:
+                # Defensive: pre-migration nodes may lack ont_type. Derive from labels.
+                ont_type, _ = _split_labels(old_labels)
+                if ont_type is None:
+                    raise ValueError(
+                        f"Cannot evolve '{name}' in domain '{domain}': head node "
+                        f"lacks an ontological label. Run the v0.7.0 migration first."
+                    )
 
-        labels_str = _labels_string(ont_type, new_subs)
+            if sub_labels is None:
+                _, inherited_subs = _split_labels(old_labels)
+                new_subs = inherited_subs
+            else:
+                new_subs = list(sub_labels)
 
-        basis_clause = (
-            f"SET d.basis = $basis" if basis is not None else ""
-        )
-        sources_clause = (
-            f"SET new.sources = $sources" if sources is not None else ""
-        )
-        t_valid_clause = (
-            f"SET new.t_valid = datetime($t_valid)" if t_valid else ""
-        )
+            labels_str = _labels_string(ont_type, new_subs)
 
-        params: Dict[str, Any] = {
-            "name": name,
-            "domain": domain,
-            "new_description": description,
-            "ont_type": ont_type,
-            "session_id": session_id,
-        }
-        if basis is not None:
-            params["basis"] = basis.value if isinstance(basis, Basis) else str(basis)
-        if sources is not None:
-            params["sources"] = sources
-        if t_valid:
-            params["t_valid"] = t_valid
+            basis_clause = (
+                f"SET d.basis = $basis" if basis is not None else ""
+            )
+            sources_clause = (
+                f"SET new.sources = $sources" if sources is not None else ""
+            )
+            t_valid_clause = (
+                f"SET new.t_valid = datetime($t_valid)" if t_valid else ""
+            )
 
-        query = load_cypher(
-            "knowledge_evolve",
-            ont_label=ont_type,
-            new_labels=labels_str,
-            basis_clause=basis_clause,
-            sources_clause=sources_clause,
-            t_valid_clause=t_valid_clause,
-        )
+            params: Dict[str, Any] = {
+                "old_eid": heads[0]["eid"],
+                "domain": domain,
+                "new_description": description,
+                "revision_why": revision_why,
+                "ont_type": ont_type,
+                "session_id": session_id,
+            }
+            if basis is not None:
+                params["basis"] = basis.value if isinstance(basis, Basis) else str(basis)
+            if sources is not None:
+                params["sources"] = sources
+            if t_valid:
+                params["t_valid"] = t_valid
 
-        result = await self.driver.execute_query(
-            query, params, routing_control=RoutingControl.WRITE,
-        )
+            query = load_cypher(
+                "knowledge_evolve",
+                ont_label=ont_type,
+                new_labels=labels_str,
+                basis_clause=basis_clause,
+                sources_clause=sources_clause,
+                t_valid_clause=t_valid_clause,
+            )
 
-        if not result.records:
-            raise ValueError(f"Failed to evolve knowledge entity '{name}'.")
+            result = await tx.run(query, params)
+            records = [r async for r in result]
+            if records:
+                return records[0]
 
-        r = result.records[0]
+            # Nothing written. Either the session does not exist, or the head
+            # was evolved by another session while this one waited for the lock.
+            # Raising rolls the transaction back, lock property included.
+            session = await tx.run(
+                "MATCH (s:Session {session_id: $session_id}) RETURN count(s) AS n",
+                {"session_id": session_id},
+            )
+            if (await session.single())["n"] == 0:
+                raise ValueError(f"Session '{session_id}' not found.")
+            raise ValueError(
+                f"Cannot evolve '{name}' in domain '{domain}': another session "
+                f"evolved it first, so it is no longer head of chain. Read the "
+                f"current version with get_chain_history and evolve that."
+            )
+
+        async with self.driver.session() as session:
+            r = await session.execute_write(_do_evolve)
+
         return {
             "name": r["name"],
             "ont_type": r["type"],
@@ -968,177 +1036,6 @@ class TemporalKnowledgeSubstrate:
             "domain": r["domain"],
             "description": r["description"],
             "evolved": True,
-        }
-
-    async def merge_knowledge(
-        self, session_id: str, name: str, domain: str = "",
-    ) -> Dict[str, Any]:
-        """Compact an entity's EVOLVED_FROM chain into a single canonical node.
-
-        Pragmatic cleanup for chains that grew through exploratory description
-        churn rather than genuine phenomenological succession. The
-        head-of-chain node becomes canonical. All edges from chain duplicates
-        are redirected to the canonical. Duplicate nodes (and the
-        EVOLVED_FROM edges between them) are deleted.
-
-        Sub-label history is NOT preserved across compaction — only the
-        canonical's sub-labels survive. Descriptions ARE returned in
-        absorbed_descriptions so temporal observations can be relocated to
-        Event nodes.
-
-        Destructive — cannot be undone.
-        """
-        logger.info(f"merge_knowledge: {name}")
-
-        if not domain:
-            domain_result = await self.driver.execute_query(
-                "MATCH (d:Domain)-[:HAS_SESSION]->(s:Session {session_id: $session_id}) "
-                "RETURN d.name AS domain",
-                {"session_id": session_id},
-                routing_control=RoutingControl.READ,
-            )
-            if not domain_result.records:
-                raise ValueError(f"Session '{session_id}' not found.")
-            domain = domain_result.records[0]["domain"]
-
-        canonical_result = await self.driver.execute_query(
-            "MATCH (:Domain {name: $domain})-[:HAS_SESSION]->(:Session)"
-            "-[:DISCOVERED]->(e:Knowledge {name: $name}) "
-            "WHERE NOT (e)<-[:EVOLVED_FROM]-() "
-            "RETURN elementId(e) AS eid, e.ont_type AS ont_type, labels(e) AS labels",
-            {"name": name, "domain": domain},
-            routing_control=RoutingControl.READ,
-        )
-
-        if not canonical_result.records:
-            raise ValueError(
-                f"Knowledge entity '{name}' not found in domain '{domain}'."
-            )
-
-        canonical_eid = canonical_result.records[0]["eid"]
-        ont_type = canonical_result.records[0]["ont_type"]
-        labels = list(canonical_result.records[0]["labels"])
-
-        for label in labels:
-            if label in PROCESS_TYPES:
-                raise ValueError(
-                    f"Cannot merge '{label}' via merge_knowledge. "
-                    f"Process-layer types cannot be merged."
-                )
-
-        dup_result = await self.driver.execute_query(
-            "MATCH (:Domain {name: $domain})-[:HAS_SESSION]->(:Session)"
-            "-[:DISCOVERED]->(e:Knowledge {name: $name}) "
-            "WHERE elementId(e) <> $canonical_eid "
-            "RETURN elementId(e) AS eid",
-            {"name": name, "domain": domain, "canonical_eid": canonical_eid},
-            routing_control=RoutingControl.READ,
-        )
-
-        dup_eids = [r["eid"] for r in dup_result.records]
-
-        if not dup_eids:
-            raise ValueError(
-                f"No duplicates found for '{name}' in domain '{domain}'. "
-                f"Nothing to merge."
-            )
-
-        desc_result = await self.driver.execute_query(
-            "MATCH (:Domain {name: $domain})-[:HAS_SESSION]->(:Session)"
-            "-[:DISCOVERED]->(dup:Knowledge {name: $name}) "
-            "WHERE elementId(dup) IN $dup_eids "
-            "RETURN dup.description AS description, "
-            "       toString(dup.t_created) AS t_created "
-            "ORDER BY dup.t_created ASC",
-            {"name": name, "domain": domain, "dup_eids": dup_eids},
-            routing_control=RoutingControl.READ,
-        )
-
-        absorbed_descriptions = [
-            {"description": r["description"], "t_created": r["t_created"]}
-            for r in desc_result.records
-        ]
-
-        # Redirect every meaningful edge type onto the canonical
-        knowledge_edge_types = [ct.value for ct in ConnectionType if ct != ConnectionType.EVOLVED_FROM]
-        redirect_types = ["DISCOVERED", "CONFIRMED"] + knowledge_edge_types
-
-        total_redirected = 0
-        params = {
-            "name": name,
-            "domain": domain,
-            "dup_eids": dup_eids,
-            "canonical_eid": canonical_eid,
-        }
-
-        for rel_type in redirect_types:
-            result = await self.driver.execute_query(
-                # rel_type comes from PROCESS_EDGES + ConnectionType, and is
-                # backtick-quoted; name/domain travel as $params
-                literal_cypher(
-                f"MATCH (source)-[r:`{rel_type}`]->(dup {{name: $name, domain: $domain}}) "
-                f"WHERE elementId(dup) IN $dup_eids "
-                f"AND elementId(source) <> $canonical_eid "
-                f"WITH source, r "
-                f"MATCH (canonical) WHERE elementId(canonical) = $canonical_eid "
-                f"MERGE (source)-[:`{rel_type}`]->(canonical) "
-                f"DELETE r "
-                f"RETURN count(r) AS redirected"),
-                params,
-                routing_control=RoutingControl.WRITE,
-            )
-            if result.records:
-                total_redirected += result.records[0]["redirected"]
-
-            if rel_type not in PROCESS_EDGES:
-                result = await self.driver.execute_query(
-                    # same closed enum as above; name/domain are $params
-                    literal_cypher(
-                    f"MATCH (:Domain {{name: $domain}})-[:HAS_SESSION]->(:Session)"
-                    f"-[:DISCOVERED]->(dup:Knowledge {{name: $name}})-[r:`{rel_type}`]->(target) "
-                    f"WHERE elementId(dup) IN $dup_eids "
-                    f"AND elementId(target) <> $canonical_eid "
-                    f"WITH target, r "
-                    f"MATCH (canonical) WHERE elementId(canonical) = $canonical_eid "
-                    f"MERGE (canonical)-[:`{rel_type}`]->(target) "
-                    f"DELETE r "
-                    f"RETURN count(r) AS redirected"),
-                    params,
-                    routing_control=RoutingControl.WRITE,
-                )
-                if result.records:
-                    total_redirected += result.records[0]["redirected"]
-
-        delete_result = await self.driver.execute_query(
-            "MATCH (:Domain {name: $domain})-[:HAS_SESSION]->(:Session)"
-            "-[:DISCOVERED]->(dup:Knowledge {name: $name}) "
-            "WHERE elementId(dup) IN $dup_eids "
-            "DETACH DELETE dup "
-            "RETURN count(dup) AS deleted",
-            {"name": name, "domain": domain, "dup_eids": dup_eids},
-            routing_control=RoutingControl.WRITE,
-        )
-
-        deleted_count = delete_result.records[0]["deleted"] if delete_result.records else 0
-
-        await self.driver.execute_query(
-            "MATCH (s:Session {session_id: $session_id}) "
-            "MATCH (canonical) WHERE elementId(canonical) = $canonical_eid "
-            "MERGE (s)-[:DISCOVERED]->(canonical) "
-            "RETURN canonical.name AS name",
-            {"session_id": session_id, "canonical_eid": canonical_eid},
-            routing_control=RoutingControl.WRITE,
-        )
-
-        return {
-            "name": name,
-            "domain": domain,
-            "ont_type": ont_type,
-            "labels": labels,
-            "duplicates_removed": deleted_count,
-            "edges_redirected": total_redirected,
-            "absorbed_descriptions": absorbed_descriptions,
-            "merged": True,
         }
 
     async def confirm_knowledge(
@@ -1498,7 +1395,7 @@ class TemporalKnowledgeSubstrate:
             for r in result.records
         ]
 
-    async def get_chain_history(self, name: str, domain: str = "") -> List[KnowledgeEntity]:
+    async def get_chain_history(self, name: str, domain: str = "") -> List[ChainStep]:
         """Walk EVOLVED_FROM backward from head-of-chain. Returns chain ordered oldest-first.
 
         Required because evolve-as-default means accumulated phenomenological
@@ -1526,14 +1423,23 @@ class TemporalKnowledgeSubstrate:
             )
 
         return [
-            KnowledgeEntity(
+            ChainStep(
                 name=r["name"],
                 type=r["type"],
                 domain=r["domain"] or "",
                 description=r["description"] or "",
                 t_created=_neo4j_datetime_to_str(r["t_created"]),
-                ont_type=r["type"],
                 labels=list(r["labels"]) if r["labels"] else None,
+                revision_why=r["revision_why"],
+                discovered_by=[
+                    ChainAuthor(
+                        session_id=a["session_id"],
+                        director=a["director"],
+                        timestamp=_neo4j_datetime_to_str(a["timestamp"]),
+                        purpose=a["purpose"],
+                    )
+                    for a in r["discovered_by"]
+                ],
             )
             for r in result.records
         ]

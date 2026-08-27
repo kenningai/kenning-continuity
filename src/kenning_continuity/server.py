@@ -1,5 +1,6 @@
 import json
 import logging
+from importlib.metadata import version as _package_version
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 
@@ -97,7 +98,9 @@ def create_mcp_server(
     """Create an MCP server instance for the temporal knowledge substrate."""
 
     namespace_prefix = format_namespace(namespace)
-    mcp: FastMCP = FastMCP("kenning-continuity")
+    # The version the MCP handshake reports. FastMCP falls back to its own
+    # unless told; read from installed metadata, never restated, so it cannot drift.
+    mcp: FastMCP = FastMCP("kenning-continuity", version=_package_version("kenning-continuity"))
 
     # ── Process Tools ────────────────────────────────────────
 
@@ -240,6 +243,7 @@ def create_mcp_server(
         session_id: str = Field(..., description="Session ID from begin_session"),
         name: str = Field(..., description="Name of the entity to evolve (must be head of chain)"),
         description: str = Field(..., description="New description for the evolved entity"),
+        revision_why: str = Field(..., description="Why the description is changing: what was learned, corrected or found missing. Required. Stored on the EVOLVED_FROM edge — keep it out of the description, which says what the entity is."),
         domain: str = Field(default="", description="Domain (uses Session's domain if omitted)"),
         sub_labels: list[str] | None = Field(default=None, description="Optional new sub-label set. REPLACES old sub-labels. Inherit from old when omitted. Ontological type is preserved across the chain."),
         basis: str | None = Field(default=None, description="How this reached the graph on THIS occasion: 'stated', 'inferred', or 'read-from-document'. Rides the DISCOVERED edge."),
@@ -261,12 +265,17 @@ def create_mcp_server(
         Actor ontological type, different sub-classification, chain
         preserved.
 
-        Example: {"session_id": "abc-123", "name": "Alice Example", "description": "CEO of Example Corp. Q3 FY2025: announced succession plan."}
+        The reason for the change goes in revision_why, never in the
+        description. A description that says "CORRECTION: ..." describes the
+        record, not the entity, and the next reader inherits the argument
+        instead of the fact.
+
+        Example: {"session_id": "abc-123", "name": "Alice Example", "description": "CEO of Example Corp. Announced a succession plan.", "revision_why": "The succession plan was announced in the Q3 FY2025 filing; the prior description predates it."}
         """
         async with _tool_errors("evolve_knowledge"):
             result = await substrate.evolve_knowledge(
                 session_id=session_id, name=name, description=description,
-                domain=domain, sub_labels=sub_labels,
+                revision_why=revision_why, domain=domain, sub_labels=sub_labels,
                 basis=Basis(basis) if basis else None, sources=sources, t_valid=t_valid,
             )
             return _json_result(result)
@@ -291,38 +300,6 @@ def create_mcp_server(
         async with _tool_errors("confirm_knowledge"):
             result = await substrate.confirm_knowledge(
                 session_id=session_id, names=names, domain=domain,
-            )
-            return _json_result(result)
-
-    @mcp.tool(
-        name=namespace_prefix + "merge_knowledge",
-        annotations=ToolAnnotations(title="Merge Knowledge", readOnlyHint=False,
-                                    destructiveHint=True, idempotentHint=False, openWorldHint=True))
-    async def merge_knowledge(
-        session_id: str = Field(..., description="Session ID from begin_session"),
-        name: str = Field(..., description="Name of the entity whose chain should be compacted"),
-        domain: str = Field(default="", description="Domain (uses Session's domain if omitted)"),
-    ) -> ToolResult:
-        """Compact an entity's EVOLVED_FROM chain into a single canonical node.
-
-        Pragmatic cleanup for chains that grew through exploratory description
-        churn rather than genuine phenomenological succession. The
-        head-of-chain node becomes canonical. All edges from chain duplicates
-        are redirected to the canonical. Duplicate nodes (and the
-        EVOLVED_FROM edges between them) are deleted.
-
-        Returns `absorbed_descriptions` — descriptions from deleted chain
-        nodes ordered by t_created. Relocate any temporal observations
-        from these to Event nodes so no information is lost.
-
-        Sub-label history is NOT preserved across compaction — only the
-        canonical's sub-labels survive. Descriptions ARE returned.
-
-        DESTRUCTIVE — cannot be undone.
-        """
-        async with _tool_errors("merge_knowledge"):
-            result = await substrate.merge_knowledge(
-                session_id=session_id, name=name, domain=domain,
             )
             return _json_result(result)
 
@@ -477,6 +454,16 @@ def create_mcp_server(
         view isn't enough — when you want to see what was previously
         understood about an entity.
 
+        Each step carries `revision_why`, the reason it replaced the step
+        before, and `discovered_by`, the session and director that wrote it.
+        A null revision_why on the first step means it replaced nothing; on a
+        later step it means the revision predates v0.2.0 and no reason was
+        recorded. Do not infer one.
+
+        A claim an earlier version made and no later version contradicts was
+        true as of when it was stated. When answering for someone new to a
+        domain, read the chain on anything central that has been revised.
+
         Example: {"name": "Alice Example", "domain": "Example Corp"}
         """
         async with _tool_errors("get_chain_history"):
@@ -609,26 +596,58 @@ def create_mcp_server(
         undirected: bool = Field(default=True, description="Treat relationships as undirected (default true)"),
         memory_gb: str = Field(default="2GB", description="Memory allocation for the projection."),
     ) -> ToolResult:
-        """Create a GDS graph projection for analytics.
+        """Create a GDS graph projection for analytics — of what is known NOW.
 
-        Process-layer nodes (Domain, Session) are always excluded.
+        Each entity enters once, as its current version. Earlier versions in an
+        EVOLVED_FROM chain are history, read with get_chain_history; they do not
+        enter the projection, so an entity revised five times is one node, not
+        five. An edge authored on an earlier version is resolved through the
+        chain to the current version at both ends, as get_domain_state does, so
+        no connection is lost by an entity having been revised. Duplicates are
+        collapsed by (source, target, type). EVOLVED_FROM itself is never
+        projected.
+
+        Process-layer nodes (Domain, Session) are always excluded. Entities with
+        no knowledge edges do not appear: the projection is built from edges.
+
+        With a domain, an entity belongs to it when a session in that domain
+        discovered it — the same walk every other tool uses. With
+        include_cross_domain, an edge is projected when either end belongs;
+        without, only when both do. A projection with nothing in it is
+        refused rather than returned as null.
         """
         async with _tool_errors("gds_create_projection"):
             if rel_types:
                 rel_filter = "|".join(f"`{rt}`" for rt in rel_types)
-                match_clause = f"MATCH (source)-[r:{rel_filter}]->(target)"
+                match_clause = f"MATCH (a:Knowledge)-[r:{rel_filter}]->(b:Knowledge)"
             else:
-                match_clause = "MATCH (source)-[r]->(target)"
+                match_clause = "MATCH (a:Knowledge)-[r]->(b:Knowledge)"
 
-            where_parts = ["source:Knowledge", "target:Knowledge"]
+            # Resolve both ends through their chains to the current version, so
+            # an edge authored before either end was evolved is still projected,
+            # and between the entities as they are now.
+            match_clause += """
+                WHERE type(r) <> 'EVOLVED_FROM'
+                MATCH (source:Knowledge)-[:EVOLVED_FROM*0..]->(a)
+                WHERE NOT (source)<-[:EVOLVED_FROM]-()
+                MATCH (target:Knowledge)-[:EVOLVED_FROM*0..]->(b)
+                WHERE NOT (target)<-[:EVOLVED_FROM]-()
+                WITH DISTINCT source, target, type(r) AS rel_type"""
+
+            where_parts = ["source <> target"]
 
             if domain:
-                if include_cross_domain:
-                    where_parts.append(
-                        "(source.domain = $domain OR target.domain = $domain)"
-                    )
-                else:
-                    where_parts.append("source.domain = $domain AND target.domain = $domain")
+                # Membership by walk, as everywhere else: knowledge nodes carry
+                # no domain property, so a domain is reached, never read off.
+                in_domain = (
+                    "EXISTS {{ (:Domain {{name: $domain}})-[:HAS_SESSION]->(:Session)"
+                    "-[:DISCOVERED]->({node}) }}"
+                )
+                joiner = " OR " if include_cross_domain else " AND "
+                where_parts.append(
+                    "(" + in_domain.format(node="source") + joiner
+                    + in_domain.format(node="target") + ")"
+                )
 
             where_clause = "WHERE " + " AND ".join(where_parts)
 
@@ -649,8 +668,20 @@ def create_mcp_server(
             # name and domain travel as $params
             result = await substrate.driver.execute_query(
                 literal_cypher(query), parameters_=params, routing_=RoutingControl.READ)
-            records = [r for r in (_value_sanitize(dict(r)) for r in result.records) if r is not None]
-            return _json_result(records)
+            projected = [r for r in (_value_sanitize(dict(r)) for r in result.records) if r is not None]
+
+            # gds.graph.project aggregates over the matched edges; over none it
+            # returns null and creates nothing, which reads as success.
+            if not any(v is not None for row in projected for v in row.values()):
+                scope = f"domain '{domain}'" if domain else "the graph"
+                hint = (" Check the domain name with list_domains, or set "
+                        "include_cross_domain." if domain else "")
+                raise ValueError(
+                    f"Nothing to project: no knowledge edges in {scope} match "
+                    f"the requested relationship types. No projection named "
+                    f"'{name}' was created.{hint}"
+                )
+            return _json_result(projected)
 
     @mcp.tool(
         name=namespace_prefix + "gds_drop_projection",
@@ -677,6 +708,33 @@ def create_mcp_server(
         async with _tool_errors("gds_pagerank"):
             result = await substrate.driver.execute_query(
                 "CALL gds.pageRank.stream($projection) YIELD nodeId, score "
+                "RETURN gds.util.asNode(nodeId).name AS node, "
+                "gds.util.asNode(nodeId).ont_type AS type, "
+                "score "
+                "ORDER BY score DESC LIMIT $result_limit",
+                projection=projection, result_limit=result_limit, routing_=RoutingControl.READ,
+            )
+            return _json_result([dict(r) for r in result.records])
+
+    @mcp.tool(
+        name=namespace_prefix + "gds_articlerank",
+        annotations=ToolAnnotations(title="GDS ArticleRank", readOnlyHint=True,
+                                    destructiveHint=False, idempotentHint=True, openWorldHint=False))
+    async def gds_articlerank(
+        projection: str = Field(..., description="Name of the graph projection"),
+        result_limit: int = Field(default=20, ge=1, le=1000, description="Max results (default 20)"),
+    ) -> ToolResult:
+        """Run ArticleRank on a GDS graph projection — PageRank with hub transmission damped.
+
+        A node linked from an entity that links to everything gains less
+        here than under PageRank. An entity that ranks high under
+        gds_pagerank and falls under this one owes its centrality to hubs,
+        not to being widely relied on. Run both on the same projection and
+        read the gap.
+        """
+        async with _tool_errors("gds_articlerank"):
+            result = await substrate.driver.execute_query(
+                "CALL gds.articleRank.stream($projection) YIELD nodeId, score "
                 "RETURN gds.util.asNode(nodeId).name AS node, "
                 "gds.util.asNode(nodeId).ont_type AS type, "
                 "score "
@@ -717,6 +775,32 @@ def create_mcp_server(
         async with _tool_errors("gds_louvain"):
             result = await substrate.driver.execute_query(
                 "CALL gds.louvain.stream($projection) YIELD nodeId, communityId "
+                "RETURN gds.util.asNode(nodeId).name AS node, "
+                "gds.util.asNode(nodeId).ont_type AS type, "
+                "communityId "
+                "ORDER BY communityId, node LIMIT $result_limit",
+                projection=projection, result_limit=result_limit, routing_=RoutingControl.READ,
+            )
+            return _json_result([dict(r) for r in result.records])
+
+    @mcp.tool(
+        name=namespace_prefix + "gds_leiden",
+        annotations=ToolAnnotations(title="GDS Leiden", readOnlyHint=True,
+                                    destructiveHint=False, idempotentHint=True, openWorldHint=False))
+    async def gds_leiden(
+        projection: str = Field(..., description="Name of the graph projection (must be undirected, the default)"),
+        result_limit: int = Field(default=20, ge=1, le=1000, description="Max results (default 20)"),
+    ) -> ToolResult:
+        """Run Leiden community detection on a GDS graph projection.
+
+        Leiden guarantees every community it returns is internally
+        connected; Louvain can return a community whose members are joined
+        only through nodes outside it. Use Leiden when the communities will
+        be read as real groupings. Requires an undirected projection.
+        """
+        async with _tool_errors("gds_leiden"):
+            result = await substrate.driver.execute_query(
+                "CALL gds.leiden.stream($projection) YIELD nodeId, communityId "
                 "RETURN gds.util.asNode(nodeId).name AS node, "
                 "gds.util.asNode(nodeId).ont_type AS type, "
                 "communityId "

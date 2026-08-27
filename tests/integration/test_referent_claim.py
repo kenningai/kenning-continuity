@@ -277,6 +277,7 @@ class TestBasisRidesTheOccasion:
             description="first heard in the room", basis=Basis.STATED)])
         await substrate.evolve_knowledge(
             "sess-1", "Grew Up", "later confirmed against the doc",
+            revision_why="checked against the document",
             domain="Example Ops", basis=Basis.READ_FROM_DOCUMENT)
 
         bases = await _count(
