@@ -247,7 +247,7 @@ def create_mcp_server(
         domain: str = Field(default="", description="Domain (uses Session's domain if omitted)"),
         sub_labels: list[str] | None = Field(default=None, description="Optional new sub-label set. REPLACES old sub-labels. Inherit from old when omitted. Ontological type is preserved across the chain."),
         basis: str | None = Field(default=None, description="How this reached the graph on THIS occasion: 'stated', 'inferred', or 'read-from-document'. Rides the DISCOVERED edge."),
-        sources: list[str] | None = Field(default=None, description="Optional sources on the new chain node. Human-set ONLY."),
+        sources: list[str] | None = Field(default=None, description="What this revision drew on: the documents, channels or people actually consulted, citing the original rather than a copy of it. Never compose a plausible source. Not inherited: what the revision carries forward stays cited on the version that first said it."),
         t_valid: str | None = Field(default=None, description="Optional ISO datetime of external validity for the new chain node."),
     ) -> ToolResult:
         """Evolve a knowledge entity — create a new version linked via EVOLVED_FROM.
@@ -395,6 +395,8 @@ def create_mcp_server(
 
         Returns head-of-chain entities (current versions) and connections
         between them. To see prior chain content, use get_chain_history.
+        Each entity carries the current version's `basis` and `sources`, as
+        get_domain_state describes.
 
         Example: {"query": "campaign routing", "domain": "Telephony", "limit": 20}
         """
@@ -417,6 +419,13 @@ def create_mcp_server(
         Returns "what do we know about this domain right now?" — entities
         and connections. To see prior chain content for any entity, use
         get_chain_history.
+
+        Each entity carries the current version's `basis` and `sources`. A
+        null means none was recorded on that version, which is common for
+        anything written before they existed; it is not evidence that the
+        knowledge is unsourced. A revised entity's sources name what the
+        revision drew on, so read the chain before concluding what an
+        entity rests on.
         """
         async with _tool_errors("get_domain_state"):
             result = await substrate.get_domain_state(
@@ -459,6 +468,11 @@ def create_mcp_server(
         A null revision_why on the first step means it replaced nothing; on a
         later step it means the revision predates v0.2.0 and no reason was
         recorded. Do not infer one.
+
+        Each step also carries its own `sources`, and each `discovered_by`
+        entry the `basis` of that occasion. Provenance is per version: a
+        revision cites what it drew on, and the claims it carried forward are
+        cited on the step that first made them. Null means none was recorded.
 
         A claim an earlier version made and no later version contradicts was
         true as of when it was stated. When answering for someone new to a

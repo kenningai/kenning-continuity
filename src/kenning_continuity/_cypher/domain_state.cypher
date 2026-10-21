@@ -18,18 +18,26 @@
 // (source head, target head, type); a pair connected by two types keeps both.
 // Entities are reached FROM the domain rather than filtered by a copy of its
 // name — see _resolve.md. A target's domain is walked the same way.
+//
+// Provenance is this version's own: `sources` on the node, `basis` on the
+// DISCOVERED edge that wrote it. Both were written from v0.1.0 and read by
+// nothing until v0.2.1, so an agent auditing another agent's ingest through
+// this view concluded the provenance was missing when it was not. Every
+// basis is returned and the substrate picks; see _one_basis.
 MATCH (:Domain {name: $domain})-[:HAS_SESSION]->(:Session)-[:DISCOVERED]->(e:Knowledge)
 WHERE NOT (e)<-[:EVOLVED_FROM]-()
   AND ($types IS NULL OR e.ont_type IN $types OR any(l IN labels(e) WHERE l IN $types))
 WITH DISTINCT e
 ORDER BY e.t_created DESC
 __limit_clause__
+WITH e, [(:Session)-[d:DISCOVERED]->(e) | d.basis] AS bases
 OPTIONAL MATCH (e)-[:EVOLVED_FROM*0..]->(anc)-[r]->(o:Knowledge)
 WHERE NOT type(r) IN $excluded
 OPTIONAL MATCH (target:Knowledge)-[:EVOLVED_FROM*0..]->(o)
 WHERE NOT (target)<-[:EVOLVED_FROM]-()
 RETURN e.name AS name, e.ont_type AS type, labels(e) AS labels,
        __description_expr__ AS description, e.t_created AS t_created,
+       e.sources AS sources, bases,
        collect(DISTINCT {
          target: target.name,
          target_domain: [(td:Domain)-[:HAS_SESSION]->(:Session)

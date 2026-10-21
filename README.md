@@ -192,10 +192,14 @@ the state inline was 600,820 characters on one production domain — roughly
 
 | Tool | Description |
 |---|---|
-| `search_knowledge` | Fulltext across names and descriptions, head-of-chain only |
-| `get_domain_state` | Current entities for a domain; optional `types`, `limit`, `descriptions` |
+| `search_knowledge` | Fulltext across names and descriptions, head-of-chain only, with each entity's `basis` and `sources` |
+| `get_domain_state` | Current entities for a domain, with each one's `basis` and `sources`; optional `types`, `limit`, `descriptions` |
 | `get_session_history` | Who worked on what, when, and toward what purpose |
-| `get_chain_history` | Walk `EVOLVED_FROM` backward — what was previously understood, why each version replaced the last, and who wrote it |
+| `get_chain_history` | Walk `EVOLVED_FROM` backward — what was previously understood, why each version replaced the last, who wrote it, and what each version cited |
+
+Provenance is per version and never inherited: a revision's `sources` name what
+that revision drew on, and `null` means nothing was recorded, not that the
+knowledge is unsourced.
 | `read_cypher` | Read-only Cypher escape hatch; writes are rejected |
 
 ### Taxonomy (2)

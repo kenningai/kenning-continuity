@@ -1,6 +1,6 @@
 [project]
 name = "kenning-continuity"
-version = "0.2.0"
+version = "0.2.1"
 description = "Kenning Continuity — an MCP server for domain-scoped enterprise knowledge that accumulates instead of degrading, with every invariant enforced by a tool"
 readme = "README.md"
 requires-python = ">=3.10"

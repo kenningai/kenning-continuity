@@ -10,13 +10,16 @@ WITH n, length(path) AS depth
 OPTIONAL MATCH (n)-[ef:EVOLVED_FROM]->()
 WITH n, depth, ef.revision_why AS revision_why
 // Authorship by walk: Version <- DISCOVERED <- Session <- DIRECTED <- Person.
-OPTIONAL MATCH (s:Session)-[:DISCOVERED]->(n)
+// basis is a fact about that occasion, so it rides with the session that
+// wrote the version rather than with the version.
+OPTIONAL MATCH (s:Session)-[d:DISCOVERED]->(n)
 OPTIONAL MATCH (p:Person)-[:DIRECTED]->(s)
-WITH n, depth, revision_why, s, p ORDER BY s.timestamp ASC
+WITH n, depth, revision_why, s, d, p ORDER BY s.timestamp ASC
 WITH n, depth, revision_why,
      [x IN collect(CASE WHEN s IS NULL THEN null ELSE
         {session_id: s.session_id, director: p.name,
-         timestamp: s.timestamp, purpose: s.purpose} END) WHERE x IS NOT NULL]
+         timestamp: s.timestamp, purpose: s.purpose, basis: d.basis} END)
+      WHERE x IS NOT NULL]
        AS discovered_by
 RETURN n.name AS name,
        n.ont_type AS type,
@@ -24,6 +27,7 @@ RETURN n.name AS name,
        $domain AS domain,
        n.description AS description,
        n.t_created AS t_created,
+       n.sources AS sources,
        revision_why,
        discovered_by,
        depth

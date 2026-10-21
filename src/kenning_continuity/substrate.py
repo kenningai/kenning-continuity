@@ -361,8 +361,8 @@ class KnowledgeEntity(BaseModel):
     domain: str = Field(default="", description="Which domain to file this in. A QUERY parameter, never stored on the node — the entity is placed by the session that discovers it. Inherits from the session when empty.")
     description: str = Field(default="", description="What this entity IS at this phenomenological moment.")
     sub_labels: list[str] | None = Field(default=None, description="Optional additional sub-labels. Coexist with the ontological type via Neo4j multi-labeling.")
-    basis: Basis | None = Field(default=None, description="How this reached the graph on THIS occasion: 'stated' (a person said it), 'inferred' (you concluded it), or 'read-from-document' (ingested from a source). Rides the DISCOVERED edge, not the entity.")
-    sources: list[str] | None = Field(default=None, description="Optional provenance list. Human-set ONLY.")
+    basis: Basis | None = Field(default=None, description="How this version reached the graph: 'stated' (a person said it), 'inferred' (you concluded it), or 'read-from-document' (ingested from a source). Rides the DISCOVERED edge, not the entity. On read, null means none was recorded — most versions written before it existed carry none. Do not infer one.")
+    sources: list[str] | None = Field(default=None, description="What this version was taken from: the documents, channels or people actually consulted. Cite the original, not a copy of it — the channel a transcript was exported from, not the transcript. Name only what you read or were given; never compose a plausible source. basis says how it arrived; sources says from what. On an evolved version it names what the revision drew on, and earlier versions' sources still stand for what was carried forward (get_chain_history). On read, null means none were recorded.")
     t_created: str | None = Field(default=None, description="ISO datetime when created. Auto-set.")
     t_valid: str | None = Field(default=None, description="ISO datetime of external validity. Optional.")
     score: float | None = Field(default=None, description="Relevance score from fulltext search.")
@@ -386,6 +386,7 @@ class ChainAuthor(BaseModel):
     director: str | None = None
     timestamp: str | None = None
     purpose: str | None = None
+    basis: Basis | None = None
 
 
 class ChainStep(BaseModel):
@@ -399,7 +400,11 @@ class ChainStep(BaseModel):
     `discovered_by` is a list, not one author, and is returned as found. A
     version is written by exactly one session, but merge_knowledge (removed in
     v0.2.0) re-pointed predecessors' DISCOVERED edges onto heads, so a node it
-    touched can carry several. Picking one would hide that it happened.
+    touched can carry several. Picking one would hide that it happened. Each
+    carries its own `basis`, a fact about that occasion.
+
+    `sources` is this version's own. A revision cites what it drew on; what it
+    carried forward is cited on the version that first said it.
     """
     name: str
     type: str
@@ -407,6 +412,7 @@ class ChainStep(BaseModel):
     domain: str
     description: str
     t_created: str | None = None
+    sources: list[str] | None = None
     revision_why: str | None = None
     discovered_by: list[ChainAuthor] = Field(default_factory=list)
 
@@ -418,6 +424,25 @@ class DomainKnowledge(BaseModel):
 
 
 # ── Helpers ──────────────────────────────────────────────────
+
+def _one_basis(name: str, bases: list[str | None]) -> "Basis | None":
+    """The basis of a version, read from the DISCOVERED edges that reach it.
+
+    A version is written by one session, so one edge — but merge_knowledge
+    (removed in v0.2.0) re-pointed predecessors' DISCOVERED edges onto heads,
+    and on one production graph 11 nodes still carry two. Measured 2026-10-21,
+    none of them disagree: all 11 carry no basis at all. Should two ever disagree,
+    a single field cannot hold both and choosing one would be a fabrication,
+    so it reads as None and get_chain_history lists each occasion's basis.
+    """
+    recorded = {b for b in bases if b is not None}
+    if len(recorded) == 1:
+        return Basis(recorded.pop())
+    if len(recorded) > 1:
+        logger.warning(f"'{name}' carries conflicting bases {sorted(recorded)}; "
+                       "reported as None, see get_chain_history")
+    return None
+
 
 def _resolve_labels(type_value: str, extra_sub_labels: list[str] | None) -> tuple[str, list[str]]:
     """Resolve user-supplied type into (ont_type, full_sub_labels_list).
@@ -1247,6 +1272,8 @@ class TemporalKnowledgeSubstrate:
                 t_created=_neo4j_datetime_to_str(r["t_created"]),
                 ont_type=r["type"],
                 labels=list(r["labels"]) if r["labels"] else None,
+                basis=_one_basis(r["name"], r["bases"]),
+                sources=r["sources"],
             )
             for r in result_entities.records
         ]
@@ -1307,6 +1334,8 @@ class TemporalKnowledgeSubstrate:
                 t_created=_neo4j_datetime_to_str(r["t_created"]),
                 ont_type=r["type"],
                 labels=list(r["labels"]) if r["labels"] else None,
+                basis=_one_basis(r["name"], r["bases"]),
+                sources=r["sources"],
             ))
 
             for conn in r["connections"]:
@@ -1430,6 +1459,7 @@ class TemporalKnowledgeSubstrate:
                 description=r["description"] or "",
                 t_created=_neo4j_datetime_to_str(r["t_created"]),
                 labels=list(r["labels"]) if r["labels"] else None,
+                sources=r["sources"],
                 revision_why=r["revision_why"],
                 discovered_by=[
                     ChainAuthor(
@@ -1437,6 +1467,7 @@ class TemporalKnowledgeSubstrate:
                         director=a["director"],
                         timestamp=_neo4j_datetime_to_str(a["timestamp"]),
                         purpose=a["purpose"],
+                        basis=a["basis"],
                     )
                     for a in r["discovered_by"]
                 ],

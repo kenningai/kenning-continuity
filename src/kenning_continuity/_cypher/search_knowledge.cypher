@@ -8,4 +8,6 @@ ORDER BY score DESC
 LIMIT $limit
 RETURN node.name AS name, node.ont_type AS type, labels(node) AS labels,
        domain, node.description AS description,
-       score, node.t_created AS t_created
+       score, node.t_created AS t_created,
+       node.sources AS sources,
+       [(:Session)-[d:DISCOVERED]->(node) | d.basis] AS bases
